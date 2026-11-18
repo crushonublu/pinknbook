@@ -1,0 +1,32 @@
+# Dependencies and build output
+node_modules/
+app/dist/
+app/src-tauri/target/
+app/src-tauri/gen/schemas/
+
+# Local tools and editor settings
+.claude/
+.venv*/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.log
+logs/
+
+# Credentials and captured traffic: never commit these
+*.pem
+*.key
+adp_token*
+*.kinf*
+reg_state.json
+verify_pair.json
+register_response.json
+account_id.txt
+tools/spike/out/
+.env
+.env.*
+
+# Temporary test pages
+app/mock.html
+app/shot.js
+app/xrdump.*
