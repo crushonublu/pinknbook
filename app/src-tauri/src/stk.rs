@@ -42,20 +42,20 @@ pub struct EpubInfo {
     pub problems: Vec<String>,
 }
 
-struct Opf {
+pub(crate) struct Opf {
     /// Path of the package document inside the zip.
-    path: String,
-    text: String,
+    pub path: String,
+    pub text: String,
 }
 
-fn read_entry(zip: &mut zip::ZipArchive<Cursor<Vec<u8>>>, name: &str) -> Option<Vec<u8>> {
+pub(crate) fn read_entry(zip: &mut zip::ZipArchive<Cursor<Vec<u8>>>, name: &str) -> Option<Vec<u8>> {
     let mut f = zip.by_name(name).ok()?;
     let mut out = Vec::with_capacity(f.size() as usize);
     f.read_to_end(&mut out).ok()?;
     Some(out)
 }
 
-fn find_opf(zip: &mut zip::ZipArchive<Cursor<Vec<u8>>>) -> Result<Opf, &'static str> {
+pub(crate) fn find_opf(zip: &mut zip::ZipArchive<Cursor<Vec<u8>>>) -> Result<Opf, &'static str> {
     let container = read_entry(zip, "META-INF/container.xml").ok_or("no_container")?;
     let text = String::from_utf8_lossy(&container).into_owned();
     let doc = roxmltree::Document::parse(&text).map_err(|_| "no_container")?;
@@ -73,7 +73,7 @@ fn find_opf(zip: &mut zip::ZipArchive<Cursor<Vec<u8>>>) -> Result<Opf, &'static 
 }
 
 /// Resolve an OPF-relative href to a zip entry name.
-fn resolve(opf_path: &str, href: &str) -> String {
+pub(crate) fn resolve(opf_path: &str, href: &str) -> String {
     let base = opf_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
     let href = href.split('#').next().unwrap_or(href).replace("%20", " ");
     let mut parts: Vec<&str> = if base.is_empty() { vec![] } else { base.split('/').collect() };
@@ -89,14 +89,14 @@ fn resolve(opf_path: &str, href: &str) -> String {
     parts.join("/")
 }
 
-struct Meta {
-    title: Option<String>,
-    author: Option<String>,
+pub(crate) struct Meta {
+    pub title: Option<String>,
+    pub author: Option<String>,
     /// Zip entry of the cover image and its media type.
-    cover: Option<(String, String)>,
+    pub cover: Option<(String, String)>,
 }
 
-fn read_meta(opf: &Opf) -> Meta {
+pub(crate) fn read_meta(opf: &Opf) -> Meta {
     let Ok(doc) = roxmltree::Document::parse(&opf.text) else {
         return Meta { title: None, author: None, cover: None };
     };
@@ -177,17 +177,8 @@ fn inspect(path: &str) -> EpubInfo {
         Some(m) if String::from_utf8_lossy(&m).trim() == "application/epub+zip" => {}
         _ => info.problems.push("no_mimetype".into()),
     }
-    if let Some(enc) = read_entry(&mut zip, "META-INF/encryption.xml") {
-        // Font obfuscation is fine; anything else is DRM Amazon will refuse.
-        let s = String::from_utf8_lossy(&enc);
-        let drm = s.match_indices("Algorithm=\"").any(|(i, _)| {
-            let rest = &s[i + 11..];
-            let alg = rest.split('"').next().unwrap_or("");
-            alg != "http://www.idpf.org/2008/embedding" && alg != "http://ns.adobe.com/pdf/enc#RC"
-        });
-        if drm {
-            info.problems.push("drm".into());
-        }
+    if has_drm(&mut zip) {
+        info.problems.push("drm".into());
     }
     match find_opf(&mut zip) {
         Err(code) => info.problems.push(code.into()),
@@ -204,6 +195,18 @@ fn inspect(path: &str) -> EpubInfo {
         }
     }
     info
+}
+
+/// Is the EPUB encrypted with DRM? Font obfuscation (IDPF, Adobe) is fine;
+/// any other algorithm in `META-INF/encryption.xml` means DRM.
+pub(crate) fn has_drm(zip: &mut zip::ZipArchive<Cursor<Vec<u8>>>) -> bool {
+    let Some(enc) = read_entry(zip, "META-INF/encryption.xml") else { return false };
+    let s = String::from_utf8_lossy(&enc);
+    s.match_indices("Algorithm=\"").any(|(i, _)| {
+        let rest = &s[i + 11..];
+        let alg = rest.split('"').next().unwrap_or("");
+        alg != "http://www.idpf.org/2008/embedding" && alg != "http://ns.adobe.com/pdf/enc#RC"
+    })
 }
 
 fn xml_text(s: &str) -> String {

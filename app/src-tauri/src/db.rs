@@ -102,19 +102,72 @@ impl Db {
         let tx = conn.transaction()?;
         let keep: std::collections::HashSet<&str> = keep.iter().map(String::as_str).collect();
         let gone: Vec<String> = {
-            let mut stmt = tx.prepare("SELECT asin FROM book")?;
+            // Only Amazon books: books added from this computer are never in the sync.
+            let mut stmt = tx.prepare("SELECT asin FROM book WHERE COALESCE(source, 'amazon') = 'amazon'")?;
             let all = stmt
                 .query_map([], |r| r.get::<_, String>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             all.into_iter().filter(|a| !keep.contains(a.as_str())).collect()
         };
         for asin in &gone {
-            for table in ["book", "book_meta", "reading_state", "reader_position", "book_override", "shelf_order"] {
-                tx.execute(&format!("DELETE FROM {table} WHERE asin = ?1"), [asin])?;
-            }
+            delete_book_rows(&tx, asin)?;
         }
         tx.commit()?;
         Ok(gone)
+    }
+
+    /// Add a book from this computer (see local.rs). `id` is its `L_…` key.
+    pub fn insert_local_book(&self, b: &NewLocalBook) -> rusqlite::Result<()> {
+        let mut conn = self.0.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO book (asin, type, title, author, content_type, purchase_date, source, updated_at)
+             VALUES (?1, 'LOCAL', ?2, ?3, ?4, ?5, 'local', datetime('now'))",
+            rusqlite::params![b.id, b.title, b.author, b.content_type, b.added_at],
+        )?;
+        tx.execute(
+            "INSERT OR REPLACE INTO local_file
+               (asin, format, size, sha256, original_path, original_name, isbn, added_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![b.id, b.format, b.size, b.sha256, b.original_path, b.original_name, b.isbn, b.added_at],
+        )?;
+        tx.commit()
+    }
+
+    /// Title of a book already in the library under this key, if any.
+    pub fn book_title(&self, asin: &str) -> Option<String> {
+        let conn = self.0.lock().unwrap();
+        conn.query_row("SELECT COALESCE(title, '') FROM book WHERE asin = ?1", [asin], |r| r.get(0))
+            .ok()
+    }
+
+    /// Where a book added from this computer came from.
+    pub fn local_file(&self, asin: &str) -> Option<LocalFile> {
+        let conn = self.0.lock().unwrap();
+        conn.query_row(
+            "SELECT format, original_path, original_name, isbn FROM local_file WHERE asin = ?1",
+            [asin],
+            |r| {
+                Ok(LocalFile {
+                    format: r.get(0)?,
+                    original_path: r.get(1)?,
+                    original_name: r.get(2)?,
+                    isbn: r.get(3)?,
+                })
+            },
+        )
+        .ok()
+    }
+
+    /// Take a book off the library: the book and what derives from it go;
+    /// highlights, bookmarks, words and reading stats stay, so they come back
+    /// if the same file is added again.
+    pub fn remove_book(&self, asin: &str) -> rusqlite::Result<()> {
+        let mut conn = self.0.lock().unwrap();
+        let tx = conn.transaction()?;
+        delete_book_rows(&tx, asin)?;
+        tx.execute("DELETE FROM local_file WHERE asin = ?1", [asin])?;
+        tx.commit()
     }
 
     /// Store reading state for one book (percent derived, position raw).
@@ -203,7 +256,8 @@ impl Db {
                     m.cover_file, m.spine_color, m.asin IS NOT NULL,
                     o.title, o.author, o.cover_file, o.spine_color,
                     r.status, COALESCE(r.status_manual, 0), rp.updated_at,
-                    m.text_length, o.spine_style, o.spine_font, o.spine_width, so.pos
+                    m.text_length, o.spine_style, o.spine_font, o.spine_width, so.pos,
+                    COALESCE(b.source, 'amazon')
              FROM book b
              LEFT JOIN reading_state r ON r.asin = b.asin
              LEFT JOIN reader_position rp ON rp.asin = b.asin
@@ -298,6 +352,8 @@ impl Db {
                         manual != 0 && r.get::<_, Option<String>>(21)?.is_some_and(|s| is_status(&s))
                     },
                     last_read: r.get(23)?,
+                    source: r.get(29)?,
+                    file_missing: false,
                     asin,
                 })
             })?
@@ -311,7 +367,7 @@ impl Db {
         let mut stmt = conn.prepare(
             "SELECT b.asin, COALESCE(b.type, '') FROM book b
              LEFT JOIN book_meta m ON m.asin = b.asin
-             WHERE m.asin IS NULL
+             WHERE m.asin IS NULL AND COALESCE(b.source, 'amazon') = 'amazon'
              ORDER BY b.updated_at DESC",
         )?;
         let rows = stmt
@@ -531,6 +587,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         ("book_override", "spine_style", "TEXT"),
         ("book_override", "spine_font", "TEXT"),
         ("book_override", "spine_width", "INTEGER"),
+        ("book", "source", "TEXT"),
     ] {
         if !has(table, col)? {
             conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {col} {ty}"))?;
@@ -594,6 +651,43 @@ pub struct LibraryRow {
     pub status_manual: bool,
     /// When the book was last read in the app (UTC, SQLite datetime).
     pub last_read: Option<String>,
+    /// "amazon" (synced from the Kindle library) or "local" (added from
+    /// this computer).
+    pub source: String,
+    /// A local book whose copy in the app's data folder is gone.
+    pub file_missing: bool,
+}
+
+/// A book added from this computer, as it is first stored.
+pub struct NewLocalBook {
+    pub id: String,
+    pub title: String,
+    pub author: String,
+    pub content_type: String,
+    pub format: String,
+    pub size: i64,
+    pub sha256: String,
+    pub original_path: String,
+    pub original_name: String,
+    pub isbn: Option<String>,
+    /// UTC, RFC 3339.
+    pub added_at: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LocalFile {
+    pub format: String,
+    pub original_path: Option<String>,
+    pub original_name: Option<String>,
+    pub isbn: Option<String>,
+}
+
+/// Delete a book's own rows (not its highlights, bookmarks or stats).
+fn delete_book_rows(tx: &rusqlite::Transaction, asin: &str) -> rusqlite::Result<()> {
+    for table in ["book", "book_meta", "reading_state", "reader_position", "book_override", "shelf_order"] {
+        tx.execute(&format!("DELETE FROM {table} WHERE asin = ?1"), [asin])?;
+    }
+    Ok(())
 }
 
 pub const STATUSES: [&str; 4] = ["unread", "reading", "finished", "abandoned"];
@@ -669,6 +763,16 @@ CREATE TABLE IF NOT EXISTS shelf_order (
     asin TEXT PRIMARY KEY,
     pos  REAL
 );
+CREATE TABLE IF NOT EXISTS local_file (
+    asin          TEXT PRIMARY KEY,
+    format        TEXT,
+    size          INTEGER,
+    sha256        TEXT,
+    original_path TEXT,
+    original_name TEXT,
+    isbn          TEXT,
+    added_at      TEXT
+);
 CREATE TABLE IF NOT EXISTS reader_position (
     asin       TEXT PRIMARY KEY,
     cfi        TEXT,
@@ -711,6 +815,41 @@ mod tests {
         assert!(!left.contains(&"B".to_string()));
         let shelf: i64 = db.0.lock().unwrap().query_row("SELECT COUNT(*) FROM shelf_order", [], |r| r.get(0)).unwrap();
         assert_eq!(shelf, 0);
+        drop(db);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A Kindle sync (even an empty "sign out and forget Kindle") never
+    /// takes away books added from this computer.
+    #[test]
+    fn prune_keeps_local_books() {
+        let path = std::env::temp_dir().join(format!("pnb-local-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let db = super::Db::open(&path).unwrap();
+        db.upsert_books(&[crate::adp::client::Book { asin: "B0KINDLE01".into(), title: "K".into(), ..Default::default() }])
+            .unwrap();
+        db.insert_local_book(&super::NewLocalBook {
+            id: "L_0123456789abcdef01234567".into(),
+            title: "Local".into(),
+            author: "Me".into(),
+            content_type: "application/epub+zip".into(),
+            format: "epub".into(),
+            size: 1,
+            sha256: "x".into(),
+            original_path: "C:/b.epub".into(),
+            original_name: "b.epub".into(),
+            isbn: Some("9780306406157".into()),
+            added_at: "2026-11-20T00:00:00Z".into(),
+        })
+        .unwrap();
+        assert_eq!(db.prune_books(&[]).unwrap(), vec!["B0KINDLE01".to_string()]);
+        let rows = db.list_library().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].source, "local");
+        assert_eq!(db.local_file(&rows[0].asin).and_then(|f| f.isbn).as_deref(), Some("9780306406157"));
+        db.remove_book(&rows[0].asin).unwrap();
+        assert!(db.list_library().unwrap().is_empty());
+        assert!(db.local_file("L_0123456789abcdef01234567").is_none());
         drop(db);
         let _ = std::fs::remove_file(&path);
     }

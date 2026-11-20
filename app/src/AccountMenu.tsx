@@ -14,7 +14,9 @@ export function AccountMenu({
   theme,
   setTheme,
   deviceName,
+  guest,
   onSignOut,
+  onSignIn,
   checkState,
   onCheckUpdate,
 }: {
@@ -23,7 +25,10 @@ export function AccountMenu({
   theme: "light" | "dark";
   setTheme: (t: "light" | "dark") => void;
   deviceName?: string;
+  /** Using the app without an Amazon account. */
+  guest?: boolean;
   onSignOut?: () => void;
+  onSignIn?: () => void;
   checkState: CheckState;
   onCheckUpdate: () => void;
 }) {
@@ -64,6 +69,15 @@ export function AccountMenu({
       </button>
       {open && (
         <div className="menu__panel" role="menu">
+          {guest && (
+            <div className="menu__head">
+              <Icon name="user" size={18} />
+              <div>
+                <div className="menu__label">{t.guestNote}</div>
+                <div className="menu__value">{t.guest}</div>
+              </div>
+            </div>
+          )}
           {deviceName && (
             <div className="menu__head">
               <Icon name="monitor" size={18} />
@@ -134,6 +148,22 @@ export function AccountMenu({
               </span>
             </span>
           </button>
+          {onSignIn && (
+            <>
+              <div className="menu__sep" />
+              <button
+                className="menu__item"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onSignIn();
+                }}
+              >
+                <Icon name="key" size={17} />
+                {t.signIn}
+              </button>
+            </>
+          )}
           {onSignOut && (
             <>
               <div className="menu__sep" />

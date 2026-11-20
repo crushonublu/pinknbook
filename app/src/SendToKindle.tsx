@@ -181,7 +181,7 @@ export function useSendQueue(onArrived: () => void) {
         for (const it of itemsRef.current) {
           if (it.status.k !== "converting") continue;
           const st = it.status;
-          const fresh = rows.filter((r) => !st.known.includes(r.asin) && r.cde_type !== "EBOK");
+          const fresh = rows.filter((r) => !st.known.includes(r.asin) && r.cde_type !== "EBOK" && r.source === "amazon");
           const want = norm(it.title);
           const hit =
             fresh.find((r) => norm(r.title) === want) ??

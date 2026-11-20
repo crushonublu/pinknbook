@@ -16,13 +16,21 @@ import Reader from "./Reader";
 import BookEditor from "./BookEditor";
 import BookDetail from "./BookDetail";
 import { Library, type BookActions } from "./Library";
-import { statusLabel } from "./bookInfo";
+import { bookKind, statusLabel } from "./bookInfo";
 import { coverOf, morph } from "./transitions";
 import { AccountMenu } from "./AccountMenu";
 import { WindowControls } from "./WindowControls";
 import { Icon } from "./icons";
 import { KindlePushDialog, wantsKindlePush, type KindlePushRequest } from "./KindlePush";
-import { DropOverlay, isEpub, SendDialog, useSendQueue } from "./SendToKindle";
+import { SendDialog, useSendQueue } from "./SendToKindle";
+import {
+  AddDropOverlay,
+  ConfirmDialog,
+  EmptyLibrary,
+  ImportToast,
+  LogoutDialog,
+  useLocalImport,
+} from "./LocalImport";
 import { BadgeToasts, StatsPage, StreakButton, useStats } from "./Stats";
 import { VocabPage } from "./Vocab";
 import { UpdateBanner, useUpdater } from "./Updater";
@@ -53,6 +61,8 @@ export default function App() {
   const t = STR[lang];
 
   const [auth, setAuth] = useState<AuthState>("loading");
+  /** The library is open: signed in to Amazon, or using the app as a guest. */
+  const hasLib = auth === "in" || auth === "guest";
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [library, setLibrary] = useState<LibraryRow[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -74,7 +84,7 @@ export default function App() {
   const [showVocab, setShowVocab] = useState(false);
   /** Where to open the book being read (a saved word's place), if not the saved position. */
   const [readAt, setReadAt] = useState<string | null>(null);
-  const stats = useStats(auth === "in");
+  const stats = useStats(hasLib);
   const updater = useUpdater();
 
   // Send to Kindle: the queue outlives the dialog.
@@ -84,34 +94,38 @@ export default function App() {
     refreshLibrary().catch(() => undefined);
     enrich();
   });
-  const sendQueueRef = useRef(sendQueue);
-  sendQueueRef.current = sendQueue;
   const [metaProgress, setMetaProgress] = useState<{ done: number; total: number } | null>(null);
+  /** Books added from this computer (picker or drop). */
+  const localImport = useLocalImport(() => {
+    refreshLibrary().catch(() => undefined);
+  });
+  const localImportRef = useRef(localImport);
+  localImportRef.current = localImport;
+  const [askLogout, setAskLogout] = useState(false);
+  /** A local book waiting for "remove from library?" to be confirmed. */
+  const [removing, setRemoving] = useState<LibraryRow | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-  // Dropping EPUB files anywhere in the window opens the send dialog.
+  // Dropping files or folders anywhere in the window adds them to the library
+  // (Send to Kindle has its own button).
   useEffect(() => {
-    if (auth !== "in") return;
+    if (!hasLib) return;
     const un = getCurrentWebview().onDragDropEvent((e) => {
       const p = e.payload;
-      if (p.type === "enter") setDragging(p.paths.some(isEpub));
+      if (p.type === "enter") setDragging(p.paths.length > 0);
       else if (p.type === "leave") setDragging(false);
       else if (p.type === "drop") {
         setDragging(false);
-        const epubs = p.paths.filter(isEpub);
-        if (epubs.length) {
-          setShowSend(true);
-          sendQueueRef.current.add(epubs).catch((err) => setError(String(err)));
-        }
+        localImportRef.current.add(p.paths);
       }
     });
     return () => {
       un.then((f) => f());
     };
-  }, [auth]);
+  }, [hasLib]);
 
   // Initial auth check + library load.
   useEffect(() => {
@@ -123,6 +137,9 @@ export default function App() {
           setAuth("in");
           await refreshLibrary();
           enrich();
+        } else if (await invoke<boolean>("guest_status")) {
+          setAuth("guest");
+          await refreshLibrary();
         } else {
           setAuth("out");
         }
@@ -210,23 +227,54 @@ export default function App() {
     }
   }
 
-  async function doLogout() {
-    await invoke("logout");
+  async function doLogout(clearKindle: boolean) {
+    setAskLogout(false);
+    try {
+      await invoke("logout", { clearKindle });
+    } catch (e) {
+      setError(String(e));
+    }
     setAccount(null);
-    setAuth("out");
-    setLibrary([]);
+    setAuth("guest");
+    await refreshLibrary().catch(() => setLibrary([]));
   }
 
-  // Only offer the type filter when the library actually mixes both kinds.
-  const hasBothTypes = useMemo(
-    () => library.some((r) => r.cde_type === "EBOK") && library.some((r) => r.cde_type !== "EBOK"),
-    [library],
-  );
-  const activeFilter: TypeFilter = hasBothTypes ? filter : "all";
+  /** "Use without signing in": remembered, so the welcome screen shows once. */
+  async function enterGuest() {
+    setError(null);
+    try {
+      await invoke("set_guest", { on: true });
+    } catch (e) {
+      setError(String(e));
+    }
+    setAuth("guest");
+    await refreshLibrary().catch(() => undefined);
+  }
+
+  async function removeLocal(row: LibraryRow) {
+    setRemoving(null);
+    try {
+      await invoke("remove_local_book", { asin: row.asin });
+      if (detailAsin === row.asin) setDetailAsin(null);
+      await refreshLibrary();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  const pickBooks = () => localImport.pick(t.addBooksHint).catch((e) => setError(String(e)));
+
+  // Only offer the kind filter when the library actually mixes kinds
+  // (Kindle purchases, Kindle documents, books from this computer).
+  const kinds = useMemo(() => {
+    const present = new Set(library.map(bookKind));
+    return (["EBOK", "PDOC", "LOCAL"] as const).filter((k) => present.has(k));
+  }, [library]);
+  const activeFilter: TypeFilter = kinds.length > 1 && (kinds as string[]).includes(filter) ? filter : "all";
 
   const shown = useMemo(() => {
     let rows = library;
-    if (activeFilter !== "all") rows = rows.filter((r) => r.cde_type === activeFilter);
+    if (activeFilter !== "all") rows = rows.filter((r) => bookKind(r) === activeFilter);
     if (statusFilter) rows = rows.filter((r) => r.status === statusFilter);
     const q = query.trim().toLowerCase();
     if (q) {
@@ -299,6 +347,7 @@ export default function App() {
 
   /** After a status change: offer to make Kindle agree (asks first). */
   function offerKindlePush(row: LibraryRow | undefined, status: ReadStatus | null) {
+    if (auth !== "in" || row?.source !== "amazon") return;
     if (row && status && wantsKindlePush(row, status)) setKindlePush({ row, status });
   }
 
@@ -321,7 +370,7 @@ export default function App() {
           <img className="brand__icon" src="/app-icon.png" alt="" width={26} height={26} draggable={false} />
           <span className="brand__name" data-tauri-drag-region>{t.appName}</span>
         </div>
-        {auth === "in" && (
+        {hasLib && (
           <label className="search titlebar__search">
             <Icon name="search" size={17} />
             <input
@@ -332,7 +381,18 @@ export default function App() {
           </label>
         )}
         <div className="titlebar__spacer" data-tauri-drag-region />
-        {auth === "in" && (
+        {hasLib && (
+          <button
+            className="iconbtn"
+            onClick={pickBooks}
+            disabled={!!localImport.state.progress}
+            title={t.addBooks}
+            aria-label={t.addBooks}
+          >
+            <Icon name="plus" size={20} />
+          </button>
+        )}
+        {hasLib && (
           <button
             className={`iconbtn${showVocab ? " iconbtn--on" : ""}`}
             onClick={() => {
@@ -345,7 +405,7 @@ export default function App() {
             <Icon name="vocab" size={18} />
           </button>
         )}
-        {auth === "in" && (
+        {hasLib && (
           <StreakButton
             lang={lang}
             s={stats.summary}
@@ -389,7 +449,9 @@ export default function App() {
           theme={theme}
           setTheme={setTheme}
           deviceName={auth === "in" ? account?.device_name : undefined}
-          onSignOut={auth === "in" ? doLogout : undefined}
+          guest={auth === "guest"}
+          onSignOut={auth === "in" ? () => setAskLogout(true) : undefined}
+          onSignIn={auth === "guest" ? doLogin : undefined}
           checkState={updater.checkState}
           onCheckUpdate={updater.checkNow}
         />
@@ -408,13 +470,24 @@ export default function App() {
           <img className="hero__mark" src="/app-icon.png" alt="" width={128} height={128} />
           <h1>{t.appName}</h1>
           <p className="muted">{t.tagline}</p>
-          <button className="btn btn--primary" disabled={!!busy} onClick={doLogin}>
-            {busy ? busy : t.signIn}
-          </button>
+          <div className="hero__choices">
+            <div className="hero__choice">
+              <button className="btn btn--primary btn--lg" disabled={!!busy} onClick={enterGuest} autoFocus>
+                {t.guestBtn}
+              </button>
+              <span className="small muted">{t.welcomeLead}</span>
+            </div>
+            <div className="hero__choice">
+              <button className="btn btn--lg" disabled={!!busy} onClick={doLogin}>
+                {busy ? busy : t.signIn}
+              </button>
+              <span className="small muted">{t.welcomeAmazon}</span>
+            </div>
+          </div>
         </div>
       )}
 
-      {auth === "in" && showVocab && !showStats && (
+      {hasLib && showVocab && !showStats && (
         <VocabPage
           lang={lang}
           titles={new Map(library.map((r) => [r.asin, r.title]))}
@@ -428,11 +501,11 @@ export default function App() {
         />
       )}
 
-      {auth === "in" && showStats && (
+      {hasLib && showStats && (
         <StatsPage lang={lang} s={stats.summary} onBack={() => setShowStats(false)} onChanged={stats.refresh} />
       )}
 
-      {auth === "in" && !showStats && !showVocab && (
+      {hasLib && !showStats && !showVocab && (
         <main className="library">
           <div className="libhead">
             <div className="libhead__title">
@@ -454,9 +527,9 @@ export default function App() {
               )}
             </div>
             <div className="libhead__tools">
-              {hasBothTypes && (
+              {kinds.length > 1 && (
                 <div className="seg" role="radiogroup">
-                  {(["all", "EBOK", "PDOC"] as TypeFilter[]).map((f) => (
+                  {(["all", ...kinds] as TypeFilter[]).map((f) => (
                     <button
                       key={f}
                       role="radio"
@@ -464,7 +537,7 @@ export default function App() {
                       className={`seg__btn${activeFilter === f ? " seg__btn--on" : ""}`}
                       onClick={() => setFilter(f)}
                     >
-                      {f === "all" ? t.all : f === "EBOK" ? t.purchased : t.docs}
+                      {f === "all" ? t.all : f === "EBOK" ? t.purchased : f === "PDOC" ? t.docs : t.typeLocal}
                     </button>
                   ))}
                 </div>
@@ -505,6 +578,9 @@ export default function App() {
             </div>
           </div>
 
+          {library.length === 0 ? (
+            <EmptyLibrary lang={lang} onAdd={pickBooks} />
+          ) : (
           <Library
             rows={shown}
             all={library}
@@ -518,6 +594,7 @@ export default function App() {
             }}
             onArrange={arrangeBook}
           />
+          )}
         </main>
       )}
 
@@ -532,6 +609,7 @@ export default function App() {
           onRead={(from) => actions.read(detailRow, from)}
           onEdit={() => setEditing(detailRow)}
           onStatus={(st) => setStatus(detailRow.asin, st)}
+          onRemove={detailRow.source === "local" ? () => setRemoving(detailRow) : undefined}
         />
       )}
 
@@ -548,7 +626,7 @@ export default function App() {
         />
       )}
 
-      {auth === "in" && (
+      {hasLib && (
         <BadgeToasts
           lang={lang}
           toasts={stats.toasts}
@@ -560,7 +638,33 @@ export default function App() {
         />
       )}
       {showSend && auth === "in" && <SendDialog lang={lang} queue={sendQueue} onClose={() => setShowSend(false)} />}
-      {dragging && <DropOverlay lang={lang} />}
+      {dragging && <AddDropOverlay lang={lang} />}
+      {!reading && (localImport.state.progress || localImport.state.results) && (
+        <ImportToast
+          lang={lang}
+          state={localImport.state}
+          onDismiss={localImport.dismiss}
+          onOpen={(id) => {
+            localImport.dismiss();
+            setReading(null);
+            setShowStats(false);
+            setShowVocab(false);
+            setDetailAsin(id);
+          }}
+        />
+      )}
+      {askLogout && <LogoutDialog lang={lang} onClose={() => setAskLogout(false)} onConfirm={doLogout} />}
+      {removing && (
+        <ConfirmDialog
+          lang={lang}
+          icon="trash"
+          title={t.removeBook}
+          text={t.removeConfirm.replace("{0}", removing.title)}
+          confirm={t.removeBook}
+          onClose={() => setRemoving(null)}
+          onConfirm={() => removeLocal(removing)}
+        />
+      )}
       {!reading && <UpdateBanner lang={lang} updater={updater} />}
 
       {kindlePush && (

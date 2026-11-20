@@ -97,10 +97,35 @@ async fn complete_login(app: AppHandle, pending: register::PendingRegistration, 
     }
 }
 
-/// Remove stored credentials (keeps the local library/DB).
+/// Sign out of Amazon. The app then carries on as a guest. With
+/// `clear_kindle`, the Kindle books and their downloaded files are taken off
+/// this computer too; books added from this computer always stay.
 #[tauri::command]
-pub fn logout() -> Result<(), String> {
-    creds::clear()
+pub fn logout(app: AppHandle, clear_kindle: Option<bool>) -> Result<(), String> {
+    creds::clear()?;
+    let db: State<Db> = app.state();
+    crate::stats::set_setting(&db, GUEST_KEY, "1")?;
+    if clear_kindle == Some(true) {
+        let books_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("books");
+        for asin in db.prune_books(&[]).map_err(|e| e.to_string())? {
+            let _ = std::fs::remove_file(books_dir.join(format!("{asin}.azw3")));
+        }
+    }
+    Ok(())
+}
+
+const GUEST_KEY: &str = "guest_mode";
+
+/// Has the user chosen to use the app without signing in?
+#[tauri::command]
+pub fn guest_status(db: State<Db>) -> bool {
+    crate::stats::setting(&db, GUEST_KEY).as_deref() == Some("1")
+}
+
+/// Remember (or forget) the choice to use the app without signing in.
+#[tauri::command]
+pub fn set_guest(db: State<Db>, on: bool) -> Result<(), String> {
+    crate::stats::set_setting(&db, GUEST_KEY, if on { "1" } else { "0" })
 }
 
 /// Pull the library from Amazon, then fetch reading state per book.
@@ -163,8 +188,12 @@ pub async fn sync_library(app: AppHandle) -> Result<usize, String> {
 
 /// The library as stored locally (fast; no network).
 #[tauri::command]
-pub fn get_library(db: State<Db>) -> Result<Vec<LibraryRow>, String> {
-    db.list_library().map_err(|e| e.to_string())
+pub fn get_library(app: AppHandle, db: State<Db>) -> Result<Vec<LibraryRow>, String> {
+    let mut rows = db.list_library().map_err(|e| e.to_string())?;
+    for r in rows.iter_mut().filter(|r| r.source == "local") {
+        r.file_missing = !crate::local::book_path(&app, &r.asin).map(|p| p.exists()).unwrap_or(false);
+    }
+    Ok(rows)
 }
 
 /// Download a book's content file (non-DRM MOBI/KF8) for the in-app reader.
@@ -176,6 +205,10 @@ pub async fn download_book(
     asin: String,
     cde_type: String,
 ) -> Result<tauri::ipc::Response, String> {
+    // A book added from this computer: the app's own copy, nothing to fetch.
+    if crate::local::is_local(&asin) {
+        return crate::local::read_book(&app, &asin).map(tauri::ipc::Response::new);
+    }
     let dir = app
         .path()
         .app_data_dir()
@@ -256,7 +289,7 @@ pub async fn push_reading_position(
     cde_type: String,
     fraction: f64,
 ) -> Result<(), String> {
-    if !(fraction > 0.0) {
+    if !(fraction > 0.0) || crate::local::is_local(&asin) {
         return Ok(());
     }
     let creds_bundle = creds::load()?.ok_or_else(|| "not signed in".to_string())?;
@@ -296,6 +329,9 @@ pub async fn push_status_to_kindle(
     cde_type: String,
     status: String,
 ) -> Result<Option<f64>, String> {
+    if crate::local::is_local(&asin) {
+        return Err("not a Kindle book".into());
+    }
     let creds_bundle = creds::load()?.ok_or_else(|| "not signed in".to_string())?;
     let db: State<Db> = app.state();
     let total = db
@@ -367,6 +403,9 @@ pub async fn kindle_furthest(
     asin: String,
     cde_type: String,
 ) -> Result<Option<Furthest>, String> {
+    if crate::local::is_local(&asin) {
+        return Ok(None);
+    }
     let creds_bundle = creds::load()?.ok_or_else(|| "not signed in".to_string())?;
     let book = client::Book {
         asin: asin.clone(),

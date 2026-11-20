@@ -50,6 +50,10 @@ export interface LibraryRow {
   status_manual: boolean;
   /** Last read in the app (UTC "YYYY-MM-DD HH:MM:SS"), if ever. */
   last_read: string | null;
+  /** Synced from the Kindle library, or added from this computer. */
+  source: "amazon" | "local";
+  /** A local book whose copy in the app's data folder is gone. */
+  file_missing: boolean;
 }
 
 export type SpineStyle = "plain" | "cloth" | "leather" | "foil";
@@ -61,6 +65,7 @@ export type ReadStatus ="unread" | "reading" | "finished" | "abandoned";
 export const STATUS_ORDER: ReadStatus[] = ["reading", "unread", "finished", "abandoned"];
 export type LibraryView = "shelves" | "grid" | "list";
 
-export type AuthState = "loading" | "out" | "in";
+/** out = first run, nothing chosen yet; guest = using the app without Amazon. */
+export type AuthState = "loading" | "out" | "guest" | "in";
 export type SortKey = "recent" | "title" | "author" | "progress";
-export type TypeFilter = "all" | "EBOK" | "PDOC";
+export type TypeFilter = "all" | "EBOK" | "PDOC" | "LOCAL";

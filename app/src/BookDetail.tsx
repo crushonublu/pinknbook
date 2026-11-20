@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { STR, type Lang } from "./i18n";
 import { STATUS_ORDER, type LibraryRow, type ReadStatus } from "./types";
 import { BookCover, coverUrl } from "./BookCover";
@@ -19,6 +20,7 @@ export default function BookDetail({
   onRead,
   onEdit,
   onStatus,
+  onRemove,
 }: {
   row: LibraryRow;
   lang: Lang;
@@ -26,6 +28,8 @@ export default function BookDetail({
   onRead: (from: Element | null) => void;
   onEdit: () => void;
   onStatus: (s: ReadStatus | null) => void;
+  /** Local books only: take it off the library (asks first). */
+  onRemove?: () => void;
 }) {
   const t = STR[lang];
   const coverRef = useRef<HTMLDivElement>(null);
@@ -42,6 +46,15 @@ export default function BookDetail({
   // else the short blurb from the search suggestion.
   const description = gr.st?.details?.description || gr.st?.book?.description || null;
   const descFromGr = !!description;
+  const local = row.source === "local";
+  const [origin, setOrigin] = useState<{ original_name: string | null; original_path: string | null } | null>(null);
+  const [revealErr, setRevealErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!local) return;
+    invoke<{ original_name: string | null; original_path: string | null } | null>("local_book_info", { asin: row.asin })
+      .then(setOrigin)
+      .catch(() => undefined);
+  }, [local, row.asin]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -94,7 +107,7 @@ export default function BookDetail({
                 {pct > 0 ? t.continueBtn : t.startReading}
               </button>
             ) : (
-              <span className="muted small">{t.notReadable}</span>
+              <span className="muted small">{local ? t.fileMissing : t.notReadable}</span>
             )}
             <button className="btn btn--ghost btn--lg" onClick={onEdit}>
               <Icon name="edit" size={17} />
@@ -119,13 +132,46 @@ export default function BookDetail({
             </label>
           </div>
 
-          {row.publisher && (
+          {(row.publisher || (local && origin?.original_name)) && (
             <dl className="facts">
-              <div>
-                <dt>NXB</dt>
-                <dd>{row.publisher}</dd>
-              </div>
+              {row.publisher && (
+                <div>
+                  <dt>NXB</dt>
+                  <dd>{row.publisher}</dd>
+                </div>
+              )}
+              {local && origin?.original_name && (
+                <div>
+                  <dt>{t.localFrom}</dt>
+                  <dd title={origin.original_path ?? undefined}>{origin.original_name}</dd>
+                </div>
+              )}
             </dl>
+          )}
+
+          {local && (
+            <div className="detail__local">
+              <span className="tag tag--local">
+                <Icon name="monitor" size={13} />
+                {t.localBadge}
+              </span>
+              {!row.file_missing && (
+                <button
+                  className="linkbtn"
+                  onClick={() =>
+                    invoke("reveal_local_book", { asin: row.asin }).catch((e) => setRevealErr(String(e)))
+                  }
+                >
+                  {t.revealFile}
+                </button>
+              )}
+              {onRemove && (
+                <button className="linkbtn linkbtn--danger" onClick={onRemove}>
+                  {t.removeBook}
+                </button>
+              )}
+              {revealErr && <span className="small muted">{revealErr}</span>}
+            </div>
           )}
 
           {row.subjects.length > 0 && (

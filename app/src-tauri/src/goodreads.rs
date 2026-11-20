@@ -467,6 +467,15 @@ fn lookup_for(app: &AppHandle, asin: &str) -> Result<Lookup, String> {
         .ok_or("book not in the library")?;
     // Store books: the Kindle ASIN is what Goodreads knows. Personal
     // documents: read ISBN / ASIN out of the downloaded file, if any.
+    if crate::local::is_local(asin) {
+        // Books added from this computer: the ISBN read from the EPUB.
+        return Ok(Lookup {
+            title: row.title,
+            author: row.author,
+            isbn: db.local_file(asin).and_then(|f| f.isbn),
+            asin: None,
+        });
+    }
     let file = (row.cde_type != "EBOK")
         .then(|| app.path().app_data_dir().ok())
         .flatten()

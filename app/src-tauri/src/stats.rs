@@ -82,13 +82,13 @@ pub fn today() -> NaiveDate {
     day_and_slot(Local::now()).0
 }
 
-fn setting(db: &Db, key: &str) -> Option<String> {
+pub(crate) fn setting(db: &Db, key: &str) -> Option<String> {
     let conn = db.0.lock().unwrap();
     conn.query_row("SELECT value FROM app_setting WHERE key = ?1", [key], |r| r.get(0))
         .ok()
 }
 
-fn set_setting(db: &Db, key: &str, value: &str) -> Result<(), String> {
+pub(crate) fn set_setting(db: &Db, key: &str, value: &str) -> Result<(), String> {
     let conn = db.0.lock().unwrap();
     conn.execute(
         "INSERT INTO app_setting (key, value) VALUES (?1, ?2)
@@ -175,6 +175,7 @@ pub async fn kindle_activity_tick(app: AppHandle) -> Result<i64, String> {
     let rows = db.list_library().map_err(|e| e.to_string())?;
     let mut books: Vec<_> = rows
         .into_iter()
+        .filter(|r| r.source == "amazon")
         .filter(|r| r.status == "reading" || r.percent.is_some_and(|p| p > 0.5 && p < 97.5))
         .collect();
     books.sort_by(|a, b| b.last_read.cmp(&a.last_read));

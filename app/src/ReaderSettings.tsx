@@ -21,12 +21,15 @@ export function ReaderSettings({
   lang,
   appTheme,
   onClose,
+  kindle = true,
 }: {
   prefs: ReaderPrefs;
   set: (patch: Partial<ReaderPrefs>) => void;
   lang: Lang;
   appTheme: "light" | "dark";
   onClose: () => void;
+  /** The book can sync with Kindle (false for books added from this computer). */
+  kindle?: boolean;
 }) {
   const t = STR[lang];
   const ref = useRef<HTMLDivElement>(null);
@@ -175,12 +178,12 @@ export function ReaderSettings({
       <div className="rset__toggles">
         <Toggle label={t.rsJustify} on={prefs.justify} onChange={(justify) => set({ justify })} />
         <Toggle label={t.pageCurlShort} on={prefs.curl} onChange={(curl) => set({ curl })} />
-        <Toggle label={t.rsKindleSync} on={prefs.kindleSync} onChange={(kindleSync) => set({ kindleSync })} />
+        {kindle && <Toggle label={t.rsKindleSync} on={prefs.kindleSync} onChange={(kindleSync) => set({ kindleSync })} />}
         <Toggle label={t.rsDict} on={prefs.dict} onChange={(dict) => set({ dict })} />
         <Toggle label={t.rsXray} on={prefs.xray} onChange={(xray) => set({ xray })} />
       </div>
       {prefs.xray && <AiSettings lang={lang} provider={prefs.aiProvider} setProvider={(aiProvider) => set({ aiProvider })} />}
-      <p className="rset__hint">{t.rsKindleSyncHint}</p>
+      {kindle && <p className="rset__hint">{t.rsKindleSyncHint}</p>}
     </div>
   );
 }

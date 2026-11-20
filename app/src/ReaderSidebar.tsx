@@ -45,6 +45,7 @@ export function ReaderSidebar({
   notesSync,
   onSyncNotes,
   kindleCapable,
+  local = false,
   searchPanel,
   wordsPanel,
   wordCount = 0,
@@ -67,6 +68,8 @@ export function ReaderSidebar({
   onSyncNotes: () => void;
   /** The book can address text by Kindle position (KF8). */
   kindleCapable: boolean;
+  /** A book added from this computer (never on Kindle). */
+  local?: boolean;
   /** The Find tab's content. */
   searchPanel: ReactNode;
   /** The saved-words tab's content (none when the dictionary is off). */
@@ -237,7 +240,7 @@ export function ReaderSidebar({
                     </span>
                   </button>
                 ) : (
-                  <p className="rside__meta rside__nokpos">{t.notesNoKindlePos}</p>
+                  <p className="rside__meta rside__nokpos">{local ? t.notesLocalOnly : t.notesNoKindlePos}</p>
                 )}
               </div>
               {shown.length ? (

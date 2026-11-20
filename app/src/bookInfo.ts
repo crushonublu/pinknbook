@@ -12,8 +12,17 @@ export function statusLabel(t: T, s: ReadStatus): string {
   }[s];
 }
 
-/** PDOCs open in the in-app reader; DRM'd store books (EBOK) do not. */
-export const isReadable = (row: LibraryRow) => row.cde_type !== "EBOK";
+/** A book added from this computer (not from the Kindle library). */
+export const isLocal = (row: Pick<LibraryRow, "source">) => row.source === "local";
+
+/** PDOCs and local EPUBs open in the in-app reader; DRM'd store books (EBOK) do not. */
+export const isReadable = (row: LibraryRow) =>
+  isLocal(row) ? !row.file_missing : row.cde_type !== "EBOK";
+
+/** The library's kind filter: Kindle purchases, Kindle documents, or this computer. */
+export function bookKind(row: LibraryRow): "EBOK" | "PDOC" | "LOCAL" {
+  return isLocal(row) ? "LOCAL" : row.cde_type === "EBOK" ? "EBOK" : "PDOC";
+}
 
 /** "vi" / "vie" / "en" → "Tiếng Việt" / "Vietnamese"… in the UI language. */
 export function languageName(lang: Lang, code: string | null): string | null {

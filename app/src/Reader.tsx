@@ -210,6 +210,8 @@ export default function Reader({
   startAt?: string | null;
 }) {
   const t = STR[lang];
+  /** A book added from this computer: nothing to sync with Kindle. */
+  const local = row.source === "local";
   const hostRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const viewRef = useRef<any>(null);
@@ -519,7 +521,8 @@ export default function Reader({
         view.style.height = "100%";
         hostRef.current.append(view);
 
-        const file = new File([buf], `${row.asin}.azw3`);
+        // foliate tells formats apart by content, and by name for FB2/CBZ.
+        const file = new File([buf], `${row.asin}.${local ? "epub" : "azw3"}`);
         // Highlight hooks go on before open: sections load during it.
         view.addEventListener("load", (e: CustomEvent) => watchSelection(e.detail.doc, e.detail.index));
         view.addEventListener("draw-annotation", (e: CustomEvent) => {
@@ -618,7 +621,7 @@ export default function Reader({
         }
       } catch (e) {
         if (!cancelled) {
-          setErrMsg(String(e));
+          setErrMsg(String(e) === "missing_file" ? t.fileMissing : String(e));
           setStatus("error");
         }
       }
@@ -629,7 +632,7 @@ export default function Reader({
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
       // Push the last reading position up to Amazon so other devices can sync.
       // Fire-and-forget: the component is unmounting.
-      if (lastFractionRef.current > 0) {
+      if (lastFractionRef.current > 0 && !local) {
         invoke("push_reading_position", {
           asin: row.asin,
           cdeType: row.cde_type,
@@ -637,7 +640,7 @@ export default function Reader({
         }).catch(() => undefined);
       }
       if (pushTimer.current) window.clearTimeout(pushTimer.current);
-      if (prefsRef.current.kindleSync) {
+      if (prefsRef.current.kindleSync && !local) {
         invoke("kindle_push_annotations", { asin: row.asin, cdeType: row.cde_type }).catch(() => undefined);
       }
       curlRef.current?.destroy();
@@ -1246,15 +1249,17 @@ export default function Reader({
         >
           <Icon name={pageMarks.length ? "bookmarkOn" : "bookmark"} size={19} />
         </button>
-        <button
-          className="reader__tool"
-          onClick={checkSync}
-          disabled={sync?.state === "checking"}
-          title={t.syncKindle}
-          aria-label={t.syncKindle}
-        >
-          <Icon name="sync" size={18} />
-        </button>
+        {!local && (
+          <button
+            className="reader__tool"
+            onClick={checkSync}
+            disabled={sync?.state === "checking"}
+            title={t.syncKindle}
+            aria-label={t.syncKindle}
+          >
+            <Icon name="sync" size={18} />
+          </button>
+        )}
         <button
           className={`reader__tool reader__tool--aa${showSettings ? " is-on" : ""}`}
           onClick={() => setShowSettings((v) => !v)}
@@ -1277,6 +1282,7 @@ export default function Reader({
             lang={lang}
             appTheme={theme}
             onClose={() => setShowSettings(false)}
+            kindle={!local}
           />
         )}
       </header>
@@ -1304,6 +1310,7 @@ export default function Reader({
             notesSync={notesSync}
             onSyncNotes={() => pullKindle(true)}
             kindleCapable={kindleCapable}
+            local={local}
             wordsPanel={
               prefs.dict || words.length ? (
                 <WordsPanel

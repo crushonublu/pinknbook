@@ -8,6 +8,7 @@ mod db;
 mod dict;
 mod goodreads;
 mod library_meta;
+mod local;
 mod meta;
 mod stats;
 mod stk;
@@ -67,6 +68,12 @@ pub fn run() {
             commands::auth_status,
             commands::login,
             commands::logout,
+            commands::guest_status,
+            commands::set_guest,
+            local::import_books,
+            local::remove_local_book,
+            local::reveal_local_book,
+            local::local_book_info,
             commands::sync_library,
             commands::get_library,
             commands::download_book,

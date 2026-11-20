@@ -2115,3 +2115,45 @@ button.gr__name:hover { text-decoration: underline; }
 @media (max-width: 760px) {
   .gr__head, .gr__summary { justify-content: center; }
 }
+
+/* Guest mode and books from this computer (src/LocalImport.tsx). */
+.hero__choices { display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; margin-top: 14px; }
+.hero__choice { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 260px; }
+.hero__choice .btn { width: 100%; justify-content: center; }
+.hero__choice .small { line-height: 1.5; }
+.hero--empty { color: var(--muted); }
+.hero--empty h2 { margin: 6px 0 0; color: var(--text); font-size: 22px; }
+.hero--empty p { margin: 0 0 8px; max-width: 420px; line-height: 1.55; }
+.imptoast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 450;
+  width: min(560px, calc(100vw - 32px)); max-height: min(60vh, 520px); display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(0,0,0,.35); animation: pop-in .2s cubic-bezier(.2, .8, .2, 1);
+}
+.imptoast--warn { border-color: color-mix(in srgb, #e5a03b 55%, var(--border)); }
+.imptoast__head { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px; font-size: 14px; }
+.imptoast__head > svg { color: var(--accent); flex: none; }
+.imptoast--warn .imptoast__head > svg { color: #e5a03b; }
+.imptoast__sum { flex: 1; min-width: 0; }
+.imptoast__x { width: 28px; height: 28px; }
+.imptoast__list { list-style: none; margin: 0; padding: 4px 14px 12px; overflow: auto; border-top: 1px solid var(--border); }
+.imptoast__item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.imptoast__item:last-child { border-bottom: none; }
+.imptoast__name { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imptoast__name .linkbtn { padding: 0; font-size: inherit; color: var(--text); text-align: left; }
+.imptoast__st { color: var(--muted); margin-top: 2px; line-height: 1.45; }
+.imptoast__item--drm .imptoast__st, .imptoast__item--corrupt .imptoast__st,
+.imptoast__item--not_epub .imptoast__st, .imptoast__item--error .imptoast__st { color: #ff9ea1; }
+.choice { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.choice__opt {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2);
+}
+.choice__opt.is-on { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); }
+.choice__opt input { accent-color: var(--accent); margin: 3px 0 0; }
+.choice__opt > span { display: flex; flex-direction: column; gap: 2px; }
+.choice__name { font-size: 14px; font-weight: 600; }
+.choice__sub { line-height: 1.45; }
+.detail__local { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 14px; }
+.linkbtn--danger:hover { color: #ff9ea1; }
+@media (prefers-reduced-motion: reduce) { .imptoast { animation: none; } }
