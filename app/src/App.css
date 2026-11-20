@@ -709,9 +709,15 @@ body {
 .case__row:not(.case__row--face) .case__slot:is(:hover, :focus-visible, .is-pulled) {
   margin: 0 var(--push, 0px) 0 10px;
 }
-/* Keep the hover while the pointer crosses the room the book just made. */
+/* Keep the hover while the pointer crosses the room the book just made, on
+   both sides: without the left one, a pointer resting on the first 10px of a
+   spine loses the book as it slides right, the book slides back, and the
+   hover flickers on and off for as long as the pointer stays there. */
 .case__row:not(.case__row--face) .case__slot:is(:hover, :focus-visible)::after {
   content: ""; position: absolute; top: 0; bottom: 0; left: 100%; width: var(--push, 0px);
+}
+.case__row:not(.case__row--face) .case__slot:is(:hover, :focus-visible)::before {
+  content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 10px;
 }
 .case__slot:hover .b3d--spine .b3d__box,
 .case__slot:focus-visible .b3d--spine .b3d__box {
