@@ -45,20 +45,29 @@ function pushWidth(row: LibraryRow): number {
 
 type Item = { kind: "book"; row: LibraryRow } | { kind: "gap"; row: LibraryRow };
 
-/** Greedy line packing: each line becomes one plank of the bookcase. */
+/**
+ * Greedy line packing: each line becomes one plank of the bookcase. On
+ * standing shelves every plank keeps room for the widest hover push among its
+ * books, so a turned book never makes the plank overflow (an overflow showed a
+ * scrollbar, which re-packed the shelves under the pointer, again and again).
+ */
 function pack(items: Item[], status: ReadStatus, width: number): Item[][] {
   const lines: Item[][] = [];
   let line: Item[] = [];
   let used = 0;
+  let room = 0;
   for (const it of items) {
     const w = slotWidth(it.row, status);
-    if (line.length && used + w > width) {
+    const push = faceOut(status) ? 0 : pushWidth(it.row);
+    if (line.length && used + w + Math.max(room, push) > width) {
       lines.push(line);
       line = [];
       used = 0;
+      room = 0;
     }
     line.push(it);
     used += w;
+    room = Math.max(room, push);
   }
   if (line.length) lines.push(line);
   return lines;
@@ -139,15 +148,23 @@ export function Bookcase({
   }, []);
 
   // ── FLIP: books glide (with a spring) to wherever a re-layout puts them.
+  // Not when the window is being resized: the width changes every frame, and
+  // springs started from half-finished springs sent books flying between
+  // planks. Then the books simply take their new places.
   const rects = useRef(new Map<string, DOMRect>());
+  const flipWidth = useRef<number | null>(null);
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
+    const resized = flipWidth.current != null && flipWidth.current !== width;
+    flipWidth.current = width;
     const base = root.getBoundingClientRect();
     const next = new Map<string, DOMRect>();
-    const motion = !reduced();
+    const motion = !reduced() && !resized;
     root.querySelectorAll<HTMLElement>("[data-flip]").forEach((el) => {
       const key = el.dataset.flip!;
+      // Measure where the book really is, not where a running spring has it.
+      if (resized) for (const a of el.getAnimations()) a.cancel();
       const r = el.getBoundingClientRect();
       const rel = new DOMRect(r.left - base.left, r.top - base.top, r.width, r.height);
       next.set(key, rel);

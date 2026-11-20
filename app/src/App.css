@@ -42,7 +42,9 @@ body {
 @media (prefers-reduced-motion: reduce) { .icon--spin { animation: none; } }
 
 .app { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
-.app__body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+/* Scrolls up and down only, with the scrollbar's room always kept: a scrollbar
+   showing up must never change the width the bookcase packs its shelves to. */
+.app__body { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; display: flex; flex-direction: column; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 .center { padding: 64px 16px; text-align: center; }
