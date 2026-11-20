@@ -336,7 +336,7 @@ function ReviewItem({ t, lang, r }: { t: T; lang: Lang; r: GrReview }) {
   const [expanded, setExpanded] = useState(false);
   const [tr, setTr] = useState<GrTranslation | null>(null);
   const [showTr, setShowTr] = useState(false);
-  const [trState, setTrState] = useState<"idle" | "busy" | "error">("idle");
+  const [trState, setTrState] = useState<"idle" | "busy" | "error" | "limited">("idle");
   const date =
     r.created != null
       ? new Date(r.created).toLocaleDateString(lang, { year: "numeric", month: "short" })
@@ -356,8 +356,8 @@ function ReviewItem({ t, lang, r }: { t: T; lang: Lang; r: GrReview }) {
       setShowTr(true);
       setExpanded(true);
       setTrState("idle");
-    } catch {
-      setTrState("error");
+    } catch (e) {
+      setTrState(String(e) === "rate_limited" ? "limited" : "error");
     }
   };
 
@@ -413,7 +413,9 @@ function ReviewItem({ t, lang, r }: { t: T; lang: Lang; r: GrReview }) {
           <p key={i}>{p}</p>
         ))}
       </button>
-      {trState === "error" && <p className="gr__trnote small muted">{t.grTranslateFailed}</p>}
+      {(trState === "error" || trState === "limited") && (
+        <p className="gr__trnote small muted">{trState === "limited" ? t.grTranslateLimited : t.grTranslateFailed}</p>
+      )}
       {showTr && tr && !sameLang && <p className="gr__trnote small muted">{t.grTranslatedBy}</p>}
     </li>
   );

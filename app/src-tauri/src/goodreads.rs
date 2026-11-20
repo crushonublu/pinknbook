@@ -658,7 +658,7 @@ pub async fn goodreads_translate(app: AppHandle, text: String, target: String) -
             return Ok(t);
         }
     }
-    let out = google_translate(&client()?, &text, &target).await?;
+    let out = translate_with_retry(&text, &target).await?;
     let db: State<Db> = app.state();
     let conn = db.0.lock().unwrap();
     let _ = conn.execute(
@@ -668,13 +668,39 @@ pub async fn goodreads_translate(app: AppHandle, text: String, target: String) -
     Ok(out)
 }
 
+/// Error text the UI recognises: Google is limiting requests for a while.
+const RATE_LIMITED: &str = "rate_limited";
+
+/// Google answers bursts with 429 for a while (seen per client, not only per
+/// IP). Wait a moment and try once more, over Windows' own TLS stack.
+async fn translate_with_retry(text: &str, target: &str) -> Result<Translation, String> {
+    match google_translate(&client()?, text, target).await {
+        Err(e) if e == RATE_LIMITED => {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            let alt = reqwest::Client::builder()
+                .use_native_tls()
+                .user_agent(concat!("pntome/", env!("CARGO_PKG_VERSION")))
+                .timeout(Duration::from_secs(15))
+                .build()
+                .map_err(|e| e.to_string())?;
+            google_translate(&alt, text, target).await
+        }
+        other => other,
+    }
+}
+
 async fn google_translate(client: &reqwest::Client, text: &str, target: &str) -> Result<Translation, String> {
+    // The text goes in a form body: in the URL, a long review (≈20 000
+    // encoded characters) is refused with 400.
     let url = reqwest::Url::parse_with_params(
         "https://translate.googleapis.com/translate_a/single",
-        &[("client", "gtx"), ("sl", "auto"), ("tl", target), ("dt", "t"), ("q", text)],
+        &[("client", "gtx"), ("sl", "auto"), ("tl", target), ("dt", "t")],
     )
     .map_err(|e| e.to_string())?;
-    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+    let resp = client.post(url).form(&[("q", text)]).send().await.map_err(|e| e.to_string())?;
+    if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(RATE_LIMITED.into());
+    }
     if !resp.status().is_success() {
         return Err(format!("Google Translate: HTTP {}", resp.status()));
     }
@@ -750,6 +776,19 @@ mod tests {
             let d = fetch_page(&c, &b.book_id).await.unwrap();
             println!("{d:#?}");
         });
+    }
+
+    /// `cargo test --lib goodreads::tests::translate_live -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn translate_live() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let short = rt.block_on(translate_with_retry("Summer nights are for dreamers.", "vi"));
+        println!("short: {short:?}");
+        let long_text = "‘But how could you live and have no story to tell?’ Summer nights are for dreamers. ".repeat(220);
+        let long = rt.block_on(translate_with_retry(&long_text, "vi"));
+        println!("long ({} chars): {:?}", long_text.chars().count(), long.as_ref().map(|t| t.text.chars().count()));
+        assert!(short.is_ok() && long.is_ok());
     }
 
     #[test]

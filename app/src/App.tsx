@@ -28,6 +28,7 @@ import {
   ConfirmDialog,
   EmptyLibrary,
   ImportToast,
+  LocalLibraryDialog,
   LogoutDialog,
   useLocalImport,
 } from "./LocalImport";
@@ -102,6 +103,11 @@ export default function App() {
   const localImportRef = useRef(localImport);
   localImportRef.current = localImport;
   const [askLogout, setAskLogout] = useState(false);
+  const [showLocalLib, setShowLocalLib] = useState(false);
+  /** After a sync: how many local books look like a Kindle book (offer to link). */
+  const [matchNotice, setMatchNotice] = useState<number | null>(null);
+  /** Show only local books that have a suggested Kindle edition. */
+  const [onlyMatches, setOnlyMatches] = useState(false);
   /** A local book waiting for "remove from library?" to be confirmed. */
   const [removing, setRemoving] = useState<LibraryRow | null>(null);
 
@@ -166,6 +172,19 @@ export default function App() {
       }),
       listen<{ done: number; total: number }>("sync-progress", (e) => {
         setProgress(e.payload);
+        // Reading progress arrives book by book: show it as it comes (at most
+        // every 1.5 s, so a big library does not reload on every book).
+        if (Date.now() - lastSyncRefresh.current > 1500) {
+          lastSyncRefresh.current = Date.now();
+          scheduleRefresh();
+        }
+      }),
+      // A sync has the book list: show the books now, and start on the
+      // covers while reading progress is still being fetched.
+      listen("library-changed", () => {
+        lastSyncRefresh.current = Date.now();
+        refreshLibrary().catch(() => undefined);
+        enrich();
       }),
       // Covers/metadata arriving from the background extraction.
       listen<{ done: number; total: number; asin: string }>("meta-progress", (e) => {
@@ -183,10 +202,24 @@ export default function App() {
   async function refreshLibrary() {
     const rows = await invoke<LibraryRow[]>("get_library");
     setLibrary(rows);
+    return rows;
   }
+
+  // Books added from watched folders: soon after opening, then every few minutes.
+  useEffect(() => {
+    if (!hasLib) return;
+    const run = () => localImportRef.current.scan();
+    const first = window.setTimeout(run, 3000);
+    const every = window.setInterval(run, 3 * 60 * 1000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(every);
+    };
+  }, [hasLib]);
 
   // Coalesce bursts of metadata events into one library reload.
   const refreshTimer = useRef<number | null>(null);
+  const lastSyncRefresh = useRef(0);
   function scheduleRefresh() {
     if (refreshTimer.current) return;
     refreshTimer.current = window.setTimeout(() => {
@@ -217,8 +250,10 @@ export default function App() {
     setProgress({ done: 0, total: 0 });
     try {
       await invoke<number>("sync_library");
-      await refreshLibrary();
+      const rows = await refreshLibrary();
       enrich();
+      const twins = rows.filter((r) => r.kindle_match).length;
+      setMatchNotice(twins > 0 ? twins : null);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -262,18 +297,65 @@ export default function App() {
     }
   }
 
+  /** The logo: back to the library as it opens (no page, filter or search on top). */
+  function goHome() {
+    if (!hasLib) return;
+    setDetailAsin(null);
+    setEditing(null);
+    setShowStats(false);
+    setShowVocab(false);
+    setStatusFilter(null);
+    setOnlyMatches(false);
+    setQuery("");
+    document.querySelector(".app__body")?.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   const pickBooks = () => localImport.pick(t.addBooksHint).catch((e) => setError(String(e)));
+
+  /** Link / unlink / "not this book" for a local book and a Kindle book. */
+  async function linkAction(cmd: "link_book" | "dismiss_link" | "unlink_book", local: LibraryRow, asin?: string) {
+    try {
+      await invoke(cmd, cmd === "unlink_book" ? { localId: local.asin } : { localId: local.asin, asin });
+      await refreshLibrary();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  /** Send a local EPUB to Kindle through the Send to Kindle dialog. */
+  async function sendLocal(row: LibraryRow) {
+    try {
+      const info = await invoke<{ path: string } | null>("local_book_info", { asin: row.asin });
+      if (!info) return;
+      setShowSend(true);
+      await sendQueue.add([info.path]);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  // A Kindle book linked to a local one is shown through the local card only.
+  const linkedKindle = useMemo(
+    () => new Set(library.map((r) => r.linked_asin).filter((a): a is string => !!a)),
+    [library],
+  );
+  const visible = useMemo(() => library.filter((r) => !linkedKindle.has(r.asin)), [library, linkedKindle]);
+  // Nothing left to link: drop the "also on Kindle" filter.
+  useEffect(() => {
+    if (onlyMatches && !visible.some((r) => r.kindle_match)) setOnlyMatches(false);
+  }, [onlyMatches, visible]);
 
   // Only offer the kind filter when the library actually mixes kinds
   // (Kindle purchases, Kindle documents, books from this computer).
   const kinds = useMemo(() => {
-    const present = new Set(library.map(bookKind));
+    const present = new Set(visible.map(bookKind));
     return (["EBOK", "PDOC", "LOCAL"] as const).filter((k) => present.has(k));
-  }, [library]);
+  }, [visible]);
   const activeFilter: TypeFilter = kinds.length > 1 && (kinds as string[]).includes(filter) ? filter : "all";
 
   const shown = useMemo(() => {
-    let rows = library;
+    let rows = visible;
+    if (onlyMatches) rows = rows.filter((r) => r.kindle_match);
     if (activeFilter !== "all") rows = rows.filter((r) => bookKind(r) === activeFilter);
     if (statusFilter) rows = rows.filter((r) => r.status === statusFilter);
     const q = query.trim().toLowerCase();
@@ -299,11 +381,13 @@ export default function App() {
         break; // recent = DB order
     }
     return sorted;
-  }, [library, activeFilter, statusFilter, query, sort]);
+  }, [visible, onlyMatches, activeFilter, statusFilter, query, sort]);
 
   const detailRow = detailAsin ? library.find((r) => r.asin === detailAsin) ?? null : null;
+  const detailTwinAsin = detailRow?.source === "local" ? (detailRow.linked_asin ?? detailRow.kindle_match) : null;
+  const detailTwin = detailTwinAsin ? library.find((r) => r.asin === detailTwinAsin) ?? null : null;
   // A status filter ("See all" on a shelf) is a flat collection, never shelves.
-  const effectiveView: LibraryView = statusFilter && view === "shelves" ? "grid" : view;
+  const effectiveView: LibraryView = (statusFilter || onlyMatches) && view === "shelves" ? "grid" : view;
 
   // Opening a book or its page morphs from the cover that was clicked.
   const actions: BookActions = {
@@ -366,10 +450,10 @@ export default function App() {
     <div className="app">
       {/* Title bar: the window is frameless, so this is also the drag handle. */}
       <header className="titlebar" data-tauri-drag-region>
-        <div className="brand" data-tauri-drag-region>
+        <button className="brand" onClick={goHome} title={t.library} aria-label={t.library}>
           <img className="brand__icon" src="/app-icon.png" alt="" width={26} height={26} draggable={false} />
-          <span className="brand__name" data-tauri-drag-region>{t.appName}</span>
-        </div>
+          <span className="brand__name">{t.appName}</span>
+        </button>
         {hasLib && (
           <label className="search titlebar__search">
             <Icon name="search" size={17} />
@@ -452,6 +536,7 @@ export default function App() {
           guest={auth === "guest"}
           onSignOut={auth === "in" ? () => setAskLogout(true) : undefined}
           onSignIn={auth === "guest" ? doLogin : undefined}
+          onLocalLibrary={hasLib ? () => setShowLocalLib(true) : undefined}
           checkState={updater.checkState}
           onCheckUpdate={updater.checkNow}
         />
@@ -462,6 +547,25 @@ export default function App() {
       {/* Everything below the title bar scrolls; the bar never moves. */}
       <div className="app__body">
       {error && <div className="banner banner--error">{error}</div>}
+      {matchNotice != null && hasLib && (
+        <div className="banner banner--info">
+          <span>{t.matchNotice.replace("{0}", String(matchNotice))}</span>
+          <button
+            className="linkbtn"
+            onClick={() => {
+              setOnlyMatches(true);
+              setShowStats(false);
+              setShowVocab(false);
+              setMatchNotice(null);
+            }}
+          >
+            {t.matchShow}
+          </button>
+          <button className="iconbtn banner__x" onClick={() => setMatchNotice(null)} aria-label={t.closeReader} title={t.closeReader}>
+            <Icon name="close" size={15} />
+          </button>
+        </div>
+      )}
 
       {auth === "loading" && <div className="center muted">{t.loading}</div>}
 
@@ -516,6 +620,12 @@ export default function App() {
               {statusFilter && (
                 <button className="filter-chip" onClick={() => setStatusFilter(null)} title={t.clearFilter}>
                   {statusLabel(t, statusFilter)}
+                  <Icon name="close" size={15} />
+                </button>
+              )}
+              {onlyMatches && (
+                <button className="filter-chip" onClick={() => setOnlyMatches(false)} title={t.clearFilter}>
+                  {t.matchChip}
                   <Icon name="close" size={15} />
                 </button>
               )}
@@ -583,7 +693,7 @@ export default function App() {
           ) : (
           <Library
             rows={shown}
-            all={library}
+            all={visible}
             view={effectiveView}
             searching={!!query.trim()}
             lang={lang}
@@ -610,6 +720,13 @@ export default function App() {
           onEdit={() => setEditing(detailRow)}
           onStatus={(st) => setStatus(detailRow.asin, st)}
           onRemove={detailRow.source === "local" ? () => setRemoving(detailRow) : undefined}
+          twin={detailTwin}
+          signedIn={auth === "in"}
+          onLink={() => detailTwin && linkAction("link_book", detailRow, detailTwin.asin)}
+          onDismissLink={() => detailTwin && linkAction("dismiss_link", detailRow, detailTwin.asin)}
+          onUnlink={() => linkAction("unlink_book", detailRow)}
+          onReadTwin={detailTwin ? () => actions.read(detailTwin, null) : undefined}
+          onSendToKindle={detailRow.source === "local" ? () => sendLocal(detailRow) : undefined}
         />
       )}
 
@@ -644,6 +761,7 @@ export default function App() {
           lang={lang}
           state={localImport.state}
           onDismiss={localImport.dismiss}
+          onCancel={localImport.cancel}
           onOpen={(id) => {
             localImport.dismiss();
             setReading(null);
@@ -651,6 +769,14 @@ export default function App() {
             setShowVocab(false);
             setDetailAsin(id);
           }}
+        />
+      )}
+      {showLocalLib && (
+        <LocalLibraryDialog
+          lang={lang}
+          onClose={() => setShowLocalLib(false)}
+          onChanged={() => refreshLibrary().catch(() => undefined)}
+          onScan={() => localImport.scan()}
         />
       )}
       {askLogout && <LogoutDialog lang={lang} onClose={() => setAskLogout(false)} onConfirm={doLogout} />}

@@ -17,6 +17,7 @@ export function AccountMenu({
   guest,
   onSignOut,
   onSignIn,
+  onLocalLibrary,
   checkState,
   onCheckUpdate,
 }: {
@@ -29,6 +30,8 @@ export function AccountMenu({
   guest?: boolean;
   onSignOut?: () => void;
   onSignIn?: () => void;
+  /** Open "Books on this computer" (space, watched folders, export). */
+  onLocalLibrary?: () => void;
   checkState: CheckState;
   onCheckUpdate: () => void;
 }) {
@@ -127,6 +130,22 @@ export function AccountMenu({
               ))}
             </div>
           </div>
+          {onLocalLibrary && (
+            <>
+              <div className="menu__sep" />
+              <button
+                className="menu__item"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onLocalLibrary();
+                }}
+              >
+                <Icon name="library" size={17} />
+                {t.localLib}
+              </button>
+            </>
+          )}
           <div className="menu__sep" />
           <button
             className="menu__item"

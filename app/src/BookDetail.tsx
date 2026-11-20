@@ -21,6 +21,13 @@ export default function BookDetail({
   onEdit,
   onStatus,
   onRemove,
+  twin,
+  signedIn = false,
+  onLink,
+  onUnlink,
+  onDismissLink,
+  onReadTwin,
+  onSendToKindle,
 }: {
   row: LibraryRow;
   lang: Lang;
@@ -30,6 +37,14 @@ export default function BookDetail({
   onStatus: (s: ReadStatus | null) => void;
   /** Local books only: take it off the library (asks first). */
   onRemove?: () => void;
+  /** Local books: the linked (or suggested) Kindle edition. */
+  twin?: LibraryRow | null;
+  signedIn?: boolean;
+  onLink?: () => void;
+  onUnlink?: () => void;
+  onDismissLink?: () => void;
+  onReadTwin?: () => void;
+  onSendToKindle?: () => void;
 }) {
   const t = STR[lang];
   const coverRef = useRef<HTMLDivElement>(null);
@@ -170,7 +185,59 @@ export default function BookDetail({
                   {t.removeBook}
                 </button>
               )}
+              {!row.file_missing && (
+                <button
+                  className="linkbtn"
+                  onClick={onSendToKindle}
+                  disabled={!signedIn || !onSendToKindle}
+                  title={signedIn ? undefined : t.sendNeedsLogin}
+                >
+                  {t.sendLocal}
+                </button>
+              )}
               {revealErr && <span className="small muted">{revealErr}</span>}
+            </div>
+          )}
+
+          {local && twin && (
+            <div className={`twin${row.linked_asin ? " twin--linked" : ""}`}>
+              <div className="twin__cover">
+                <BookCover row={twin} />
+              </div>
+              <div className="twin__body">
+                <div className="twin__label small muted">{row.linked_asin ? t.kindleTwin : t.linkSuggest}</div>
+                <div className="twin__title">{twin.title}</div>
+                <div className="small muted">
+                  {[twin.author, twin.cde_type === "EBOK" ? t.purchased : t.docs, twin.percent ? `${Math.round(twin.percent)}%` : null]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+                {row.linked_asin && <p className="small muted twin__note">{t.linkedNote}</p>}
+                <div className="twin__actions">
+                  {row.linked_asin ? (
+                    <>
+                      {isReadable(twin) && onReadTwin && (
+                        <button className="btn btn--ghost" onClick={onReadTwin}>
+                          <Icon name="play" size={15} />
+                          {t.readKindle}
+                        </button>
+                      )}
+                      <button className="linkbtn" onClick={onUnlink}>
+                        {t.unlinkBtn}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn" onClick={onLink}>
+                        {t.linkBtn}
+                      </button>
+                      <button className="linkbtn" onClick={onDismissLink}>
+                        {t.linkNot}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

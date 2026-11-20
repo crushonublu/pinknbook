@@ -10,16 +10,22 @@
 
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::db::{Db, NewLocalBook, StoredMeta};
+use crate::db::{Db, LibraryRow, NewLocalBook, StoredMeta};
 use crate::{library_meta, meta, stk};
 
 pub const PREFIX: &str = "L_";
 /// Files above this size are still added, but flagged (usually image books).
 pub const LARGE_BYTES: u64 = 100 * 1024 * 1024;
+
+/// Set by `cancel_import`; the running import stops before its next file.
+static CANCEL: AtomicBool = AtomicBool::new(false);
+/// One import at a time (picker, drop, watched folders, restore).
+pub(crate) static IMPORTING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Is this library key a book added from this computer?
 pub fn is_local(id: &str) -> bool {
@@ -153,7 +159,7 @@ pub struct ImportResult {
 
 /// Files to try for the given paths: files as they are, folders searched
 /// (with sub-folders) for `.epub` files.
-fn expand(paths: &[String]) -> Vec<PathBuf> {
+pub(crate) fn expand(paths: &[String]) -> Vec<PathBuf> {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
         if depth > 12 {
             return;
@@ -188,10 +194,30 @@ fn same_key(s: &str) -> String {
         .collect()
 }
 
-fn import_one(app: &AppHandle, path: &Path) -> ImportResult {
+pub(crate) fn import_one(app: &AppHandle, path: &Path) -> ImportResult {
+    let label = path.to_string_lossy().into_owned();
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    match std::fs::read(path) {
+        Ok(bytes) => import_bytes(app, &bytes, label, name),
+        Err(e) => ImportResult {
+            path: label,
+            name,
+            status: "error".into(),
+            id: None,
+            title: None,
+            similar: None,
+            large: false,
+            error: Some(e.to_string()),
+        },
+    }
+}
+
+/// Add one book from its bytes. `path` / `name` are where it came from (shown
+/// to the user and kept as the book's origin).
+pub(crate) fn import_bytes(app: &AppHandle, bytes: &[u8], path: String, name: String) -> ImportResult {
     let mut res = ImportResult {
-        path: path.to_string_lossy().into_owned(),
-        name: path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+        path,
+        name,
         status: "error".into(),
         id: None,
         title: None,
@@ -199,22 +225,15 @@ fn import_one(app: &AppHandle, path: &Path) -> ImportResult {
         large: false,
         error: None,
     };
-    let bytes = match std::fs::read(path) {
-        Ok(b) => b,
-        Err(e) => {
-            res.error = Some(e.to_string());
-            return res;
-        }
-    };
     res.large = bytes.len() as u64 > LARGE_BYTES;
-    let em = match read_epub(&bytes) {
+    let em = match read_epub(bytes) {
         Ok(m) => m,
         Err(code) => {
             res.status = code.into();
             return res;
         }
     };
-    let id = format!("{PREFIX}{}", &hex::encode(Sha256::digest(&bytes))[..24]);
+    let id = format!("{PREFIX}{}", &hex::encode(Sha256::digest(bytes))[..24]);
     res.id = Some(id.clone());
 
     let db: State<Db> = app.state();
@@ -225,16 +244,18 @@ fn import_one(app: &AppHandle, path: &Path) -> ImportResult {
     }
 
     // Display title / author, cleaned the same way as Kindle books.
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = Path::new(&res.name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let raw_title = em.title.clone().unwrap_or_else(|| stem.replace('_', " "));
     let (title, author) = meta::clean_title_author(&raw_title, em.author.as_deref().unwrap_or(""), None, None);
     res.title = Some(title.clone());
 
-    // Same title + author (or ISBN) already in the library?
+    // Same title + author (or ISBN) already among the local books? (A Kindle
+    // book with the same title is offered as a link instead.)
     if let Ok(rows) = db.list_library() {
         let (kt, ka) = (same_key(&title), same_key(&author));
         res.similar = rows
             .iter()
+            .filter(|r| r.source == "local")
             .find(|r| {
                 let isbn_hit = em.isbn.is_some()
                     && crate::local::is_local(&r.asin)
@@ -254,7 +275,7 @@ fn import_one(app: &AppHandle, path: &Path) -> ImportResult {
         }
     };
     let part = target.with_extension("epub.part");
-    if let Err(e) = std::fs::write(&part, &bytes).and_then(|_| std::fs::rename(&part, &target)) {
+    if let Err(e) = std::fs::write(&part, bytes).and_then(|_| std::fs::rename(&part, &target)) {
         let _ = std::fs::remove_file(&part);
         res.error = Some(e.to_string());
         return res;
@@ -278,7 +299,7 @@ fn import_one(app: &AppHandle, path: &Path) -> ImportResult {
             content_type: "application/epub+zip".into(),
             format: "epub".into(),
             size: bytes.len() as i64,
-            sha256: hex::encode(Sha256::digest(&bytes)),
+            sha256: hex::encode(Sha256::digest(bytes)),
             original_path: res.path.clone(),
             original_name: res.name.clone(),
             isbn: em.isbn.clone(),
@@ -315,10 +336,15 @@ fn import_one(app: &AppHandle, path: &Path) -> ImportResult {
 #[tauri::command]
 pub async fn import_books(app: AppHandle, paths: Vec<String>) -> Result<Vec<ImportResult>, String> {
     let files = expand(&paths);
+    let guard = IMPORTING.lock().await;
+    CANCEL.store(false, Ordering::SeqCst);
     let total = files.len();
     let _ = app.emit("import-progress", serde_json::json!({"done": 0, "total": total}));
     let mut out = Vec::with_capacity(total);
     for (i, f) in files.into_iter().enumerate() {
+        if CANCEL.swap(false, Ordering::SeqCst) {
+            break;
+        }
         let a = app.clone();
         let r = tauri::async_runtime::spawn_blocking(move || import_one(&a, &f))
             .await
@@ -326,7 +352,127 @@ pub async fn import_books(app: AppHandle, paths: Vec<String>) -> Result<Vec<Impo
         out.push(r);
         let _ = app.emit("import-progress", serde_json::json!({"done": i + 1, "total": total}));
     }
+    drop(guard);
     Ok(out)
+}
+
+/// Stop the running import before its next file (files already added stay).
+#[tauri::command]
+pub fn cancel_import() {
+    CANCEL.store(true, Ordering::SeqCst);
+}
+
+// ---- Local ↔ Kindle links ---------------------------------------------------
+
+/// Title for matching: lower-case letters and digits, without a subtitle.
+fn title_key(t: &str) -> String {
+    let cut = [":", " - ", " – ", " (", "("]
+        .iter()
+        .filter_map(|s| t.find(s))
+        .filter(|&i| i > 2)
+        .min()
+        .unwrap_or(t.len());
+    same_key(&t[..cut])
+}
+
+/// The words of an author field ("Hoài, Tô" and "Tô Hoài" share both).
+fn author_words(a: &str) -> std::collections::HashSet<String> {
+    a.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| w.to_lowercase())
+        .collect()
+}
+
+/// Do a local book and a Kindle book look like the same title?
+pub fn looks_same(local: &LibraryRow, kindle: &LibraryRow) -> bool {
+    let (a, b) = (title_key(&local.title), title_key(&kindle.title));
+    if a.chars().count() < 3 || a != b {
+        return false;
+    }
+    let (wa, wb) = (author_words(&local.author), author_words(&kindle.author));
+    if wa.is_empty() || wb.is_empty() {
+        return true;
+    }
+    let common = wa.intersection(&wb).count();
+    common >= wa.len().min(wb.len()).min(2)
+}
+
+/// Fill `linked_asin` and `kindle_match` on the local rows.
+pub fn attach_links(rows: &mut [LibraryRow], links: &[(String, String, String)]) {
+    let kindle: std::collections::HashSet<String> =
+        rows.iter().filter(|r| r.source != "local").map(|r| r.asin.clone()).collect();
+    let linked: std::collections::HashMap<&str, &str> = links
+        .iter()
+        .filter(|(_, a, s)| s == "linked" && kindle.contains(a))
+        .map(|(l, a, _)| (l.as_str(), a.as_str()))
+        .collect();
+    let taken: std::collections::HashSet<&str> = linked.values().copied().collect();
+    let dismissed: std::collections::HashSet<(&str, &str)> =
+        links.iter().filter(|(_, _, s)| s == "dismissed").map(|(l, a, _)| (l.as_str(), a.as_str())).collect();
+    let matches: Vec<(usize, Option<String>, Option<String>)> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.source == "local")
+        .map(|(i, r)| {
+            if let Some(a) = linked.get(r.asin.as_str()) {
+                return (i, Some(a.to_string()), None);
+            }
+            let m = rows
+                .iter()
+                .filter(|k| k.source != "local" && !taken.contains(k.asin.as_str()))
+                .filter(|k| !dismissed.contains(&(r.asin.as_str(), k.asin.as_str())))
+                .find(|k| looks_same(r, k))
+                .map(|k| k.asin.clone());
+            (i, None, m)
+        })
+        .collect();
+    for (i, linked, m) in matches {
+        rows[i].linked_asin = linked;
+        rows[i].kindle_match = m;
+    }
+}
+
+fn check_pair(db: &Db, local_id: &str, asin: &str) -> Result<(), String> {
+    if !is_local(local_id) || is_local(asin) {
+        return Err("a link joins a local book and a Kindle book".into());
+    }
+    if db.book_title(local_id).is_none() || db.book_title(asin).is_none() {
+        return Err("book not in the library".into());
+    }
+    Ok(())
+}
+
+/// Join a local book and a Kindle book into one card.
+#[tauri::command]
+pub fn link_book(db: State<Db>, local_id: String, asin: String) -> Result<(), String> {
+    check_pair(&db, &local_id, &asin)?;
+    db.link_book(&local_id, &asin).map_err(|e| e.to_string())
+}
+
+/// "Not this book": stop suggesting this Kindle book for this local book.
+#[tauri::command]
+pub fn dismiss_link(db: State<Db>, local_id: String, asin: String) -> Result<(), String> {
+    check_pair(&db, &local_id, &asin)?;
+    db.dismiss_link(&local_id, &asin).map_err(|e| e.to_string())
+}
+
+/// Split a linked pair back into two cards.
+#[tauri::command]
+pub fn unlink_book(db: State<Db>, local_id: String) -> Result<(), String> {
+    db.unlink_book(&local_id).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct LocalUsage {
+    pub count: i64,
+    pub bytes: i64,
+}
+
+/// How many books were added from this computer and the space their copies take.
+#[tauri::command]
+pub fn local_usage(db: State<Db>) -> Result<LocalUsage, String> {
+    let (count, bytes) = db.local_usage().map_err(|e| e.to_string())?;
+    Ok(LocalUsage { count, bytes })
 }
 
 /// Take a local book off the library and delete the app's copy of it. The
@@ -349,10 +495,21 @@ pub fn remove_local_book(app: AppHandle, asin: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Where a local book was added from (shown on its page).
+#[derive(serde::Serialize)]
+pub struct LocalInfo {
+    #[serde(flatten)]
+    pub file: crate::db::LocalFile,
+    /// The app's own copy (what "Send to Kindle" sends).
+    pub path: String,
+}
+
+/// Where a local book was added from, and where the app keeps it.
 #[tauri::command]
-pub fn local_book_info(db: State<Db>, asin: String) -> Option<crate::db::LocalFile> {
-    db.local_file(&asin)
+pub fn local_book_info(app: AppHandle, asin: String) -> Option<LocalInfo> {
+    let db: State<Db> = app.state();
+    let file = db.local_file(&asin)?;
+    let path = book_path(&app, &asin).ok()?.to_string_lossy().into_owned();
+    Some(LocalInfo { file, path })
 }
 
 /// Show the app's copy of a local book in Explorer.
@@ -445,6 +602,79 @@ mod tests {
         assert_eq!(isbn_of("9780306406157").as_deref(), Some("9780306406157"));
         assert_eq!(isbn_of("urn:uuid:1234-5678"), None);
         assert_eq!(isbn_of("calibre:123"), None);
+    }
+
+    fn lib_row(asin: &str, title: &str, author: &str, source: &str) -> LibraryRow {
+        let json = serde_json::json!({});
+        let _ = json;
+        LibraryRow {
+            asin: asin.into(),
+            cde_type: if source == "local" { "LOCAL".into() } else { "EBOK".into() },
+            title: title.into(),
+            author: author.into(),
+            auto_title: title.into(),
+            auto_author: author.into(),
+            original_title: title.into(),
+            original_author: author.into(),
+            edited: false,
+            typographic_cover: false,
+            auto_cover: None,
+            content_type: String::new(),
+            purchase_date: String::new(),
+            percent: None,
+            furthest_pos: None,
+            description: None,
+            subjects: vec![],
+            language: None,
+            publisher: None,
+            cover: None,
+            spine_color: String::new(),
+            auto_spine_color: String::new(),
+            text_length: None,
+            spine_style: None,
+            spine_font: None,
+            spine_width: None,
+            shelf_pos: None,
+            meta_ready: true,
+            status: "unread".into(),
+            status_manual: false,
+            last_read: None,
+            source: source.into(),
+            file_missing: false,
+            linked_asin: None,
+            kindle_match: None,
+        }
+    }
+
+    #[test]
+    fn suggests_and_links_kindle_twins() {
+        let mut rows = vec![
+            lib_row("L_a", "Dế Mèn phiêu lưu ký", "Tô Hoài", "local"),
+            lib_row("L_b", "Sapiens: A Brief History of Humankind", "Yuval Noah Harari", "local"),
+            lib_row("L_c", "Something Else", "Nobody", "local"),
+            lib_row("B000000001", "Dế mèn phiêu lưu ký (Tái bản 2020)", "Hoài, Tô", "amazon"),
+            lib_row("B000000002", "Sapiens", "Harari, Yuval Noah", "amazon"),
+        ];
+        attach_links(&mut rows, &[]);
+        assert_eq!(rows[0].kindle_match.as_deref(), Some("B000000001"));
+        assert_eq!(rows[1].kindle_match.as_deref(), Some("B000000002"));
+        assert_eq!(rows[2].kindle_match, None);
+
+        let links = vec![
+            ("L_a".to_string(), "B000000001".to_string(), "linked".to_string()),
+            ("L_b".to_string(), "B000000002".to_string(), "dismissed".to_string()),
+        ];
+        attach_links(&mut rows, &links);
+        assert_eq!(rows[0].linked_asin.as_deref(), Some("B000000001"));
+        assert_eq!(rows[0].kindle_match, None);
+        assert_eq!(rows[1].kindle_match, None);
+    }
+
+    #[test]
+    fn different_authors_do_not_match() {
+        let a = lib_row("L_a", "Emma", "Jane Austen", "local");
+        let b = lib_row("B000000003", "Emma", "Some Other Writer", "amazon");
+        assert!(!looks_same(&a, &b));
     }
 
     #[test]

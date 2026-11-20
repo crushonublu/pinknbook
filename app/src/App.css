@@ -52,6 +52,8 @@ body {
 /* Title bar — the window is frameless (tauri.conf.json), so this bar is the
    drag handle and carries the window controls. */
 .titlebar {
+  /* Above the book page (z 60) so the account menu and other drop-downs show over it. */
+  position: relative; z-index: 70;
   flex: none; height: 52px;
   display: flex; align-items: center; gap: 10px;
   padding: 0 0 0 16px;
@@ -62,7 +64,13 @@ body {
 .titlebar__spacer { flex: 1; align-self: stretch; }
 .titlebar__search { flex: 0 1 380px; min-width: 160px; height: 34px; margin-left: 18px; border-radius: 10px; }
 .titlebar__sep { width: 1px; height: 22px; background: var(--border); margin: 0 2px 0 4px; }
-.brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 16px; }
+.brand {
+  display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 16px;
+  padding: 4px 8px 4px 4px; margin-left: -4px; border: none; border-radius: 10px;
+  background: none; color: inherit; font-family: inherit; cursor: pointer;
+}
+.brand:hover { background: var(--surface-2); }
+.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .brand__name { letter-spacing: 0.2px; }
 
 /* Quiet round icon buttons in the title bar. */
@@ -488,7 +496,8 @@ body {
   filter: blur(60px) saturate(1.4); opacity: .45; transform: scale(1.3);
 }
 .detail__wash::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 30%, var(--bg)); }
-.detail__close { position: absolute; top: 16px; right: 20px; z-index: 2; color: var(--text); background: color-mix(in srgb, var(--surface) 60%, transparent); backdrop-filter: blur(8px); }
+/* Fixed, so it stays in reach however far the page is scrolled (52px = title bar). */
+.detail__close { position: fixed; top: 68px; right: 28px; z-index: 61; color: var(--text); background: color-mix(in srgb, var(--surface) 60%, transparent); backdrop-filter: blur(8px); }
 .detail__inner {
   position: relative; max-width: 1000px; margin: 0 auto; padding: 56px 32px 64px;
   display: flex; gap: 48px; align-items: flex-start;
@@ -2157,3 +2166,37 @@ button.gr__name:hover { text-decoration: underline; }
 .detail__local { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 14px; }
 .linkbtn--danger:hover { color: #ff9ea1; }
 @media (prefers-reduced-motion: reduce) { .imptoast { animation: none; } }
+
+/* Linked Kindle editions, watched folders and export (phase 2/3). */
+.banner--info { display: flex; align-items: center; gap: 12px; background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-bottom: 1px solid var(--border); }
+.banner--info > span { flex: 1; }
+.banner__x { width: 26px; height: 26px; }
+.tag--twin { margin-left: 8px; font-size: 11px; padding: 1px 7px; vertical-align: middle; }
+.twin {
+  display: flex; gap: 14px; margin-top: 16px; padding: 12px; max-width: 560px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--border)); border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.twin--linked { border-style: solid; border-color: var(--border); background: var(--surface-2); }
+.twin__cover { flex: 0 0 56px; }
+.twin__cover .cover { border-radius: 2px 5px 5px 2px; }
+.twin__body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.twin__title { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.twin__note { margin: 4px 0 0; line-height: 1.45; }
+.twin__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; }
+.imptoast__stop { margin-left: auto; }
+.locallib { width: min(520px, 100%); }
+.locallib__head { display: flex; align-items: center; gap: 12px; }
+.locallib__head .kpush__icon { margin: 0; flex: none; }
+.locallib__x { margin-left: auto; align-self: flex-start; }
+.locallib__sec { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.locallib__sec h3 { margin: 0 0 4px; font-size: 15px; }
+.locallib__sec p { margin: 0 0 10px; line-height: 1.5; }
+.locallib__folders { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.locallib__folders li { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); font-size: 13.5px; }
+.locallib__folders li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.locallib__folders .iconbtn { width: 28px; height: 28px; }
+.locallib__none { font-style: italic; }
+.locallib__row { display: flex; flex-wrap: wrap; gap: 8px; }
+.locallib__msg { margin: 16px 0 0; line-height: 1.5; color: var(--text); }
+.locallib__msg--error { color: #ff9ea1; }

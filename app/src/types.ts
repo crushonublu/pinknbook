@@ -54,6 +54,10 @@ export interface LibraryRow {
   source: "amazon" | "local";
   /** A local book whose copy in the app's data folder is gone. */
   file_missing: boolean;
+  /** Local books: the Kindle book it is linked to (shown as one card). */
+  linked_asin: string | null;
+  /** Local books: a Kindle book that looks like the same title (not linked yet). */
+  kindle_match: string | null;
 }
 
 export type SpineStyle = "plain" | "cloth" | "leather" | "foil";

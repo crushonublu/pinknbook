@@ -158,6 +158,9 @@ pub async fn sync_library(app: AppHandle) -> Result<usize, String> {
         }
     }
 
+    // The book list is in: the UI shows it now; reading progress per book
+    // (one request each, the slow part) fills in below.
+    let _ = app.emit("library-changed", ());
     let total = books.len();
     let _ = app.emit("sync-progress", serde_json::json!({"done": 0, "total": total}));
 
@@ -193,6 +196,7 @@ pub fn get_library(app: AppHandle, db: State<Db>) -> Result<Vec<LibraryRow>, Str
     for r in rows.iter_mut().filter(|r| r.source == "local") {
         r.file_missing = !crate::local::book_path(&app, &r.asin).map(|p| p.exists()).unwrap_or(false);
     }
+    crate::local::attach_links(&mut rows, &db.book_links().map_err(|e| e.to_string())?);
     Ok(rows)
 }
 

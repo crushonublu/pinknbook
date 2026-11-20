@@ -32,7 +32,7 @@ hex = "0.4.3"
 chrono = "0.4.38"
 
 # HTTP + parsing
-reqwest = { version = "0.12.7", default-features = false, features = ["gzip", "rustls-tls", "json", "stream"] }
+reqwest = { version = "0.12.7", default-features = false, features = ["gzip", "rustls-tls", "native-tls", "json", "stream"] }
 roxmltree = "0.20.0"
 url = "2.5.2"
 
@@ -45,7 +45,7 @@ thiserror = "1.0.63"
 
 # Library metadata: cover decoding (spine colour) and download pacing
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif"] }
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "sync"] }
 unicode-normalization = "0.1"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 futures-util = "0.3"

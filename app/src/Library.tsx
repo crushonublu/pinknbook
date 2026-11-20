@@ -139,7 +139,10 @@ function ListRow({ row, t, actions }: { row: LibraryRow; t: T; actions: BookActi
       </div>
       <div className="list__main">
         <div className="list__title">{row.title}</div>
-        <div className="list__author muted">{row.author || t.noAuthor}</div>
+        <div className="list__author muted">
+          {row.author || t.noAuthor}
+          {row.kindle_match && <span className="tag tag--twin">{t.matchChip}</span>}
+        </div>
       </div>
       <span className={`status-pill status-pill--${row.status}`}>{statusLabel(t, row.status)}</span>
       <div className="list__progress">

@@ -24,6 +24,7 @@ impl Db {
         conn.execute_batch(crate::vocab::SCHEMA)?;
         conn.execute_batch(crate::ai::SCHEMA)?;
         conn.execute_batch(crate::goodreads::SCHEMA)?;
+        conn.execute_batch(crate::local_io::SCHEMA)?;
         Ok(Db(Mutex::new(conn)))
     }
 
@@ -157,6 +158,54 @@ impl Db {
             },
         )
         .ok()
+    }
+
+    /// Every local ↔ Kindle pairing the user decided: (local_id, asin, state),
+    /// state "linked" or "dismissed".
+    pub fn book_links(&self) -> rusqlite::Result<Vec<(String, String, String)>> {
+        let conn = self.0.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT local_id, asin, state FROM book_link")?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Link a local book to a Kindle book (one Kindle book per local book).
+    pub fn link_book(&self, local_id: &str, asin: &str) -> rusqlite::Result<()> {
+        let mut conn = self.0.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM book_link WHERE (local_id = ?1 OR asin = ?2) AND state = 'linked'", [local_id, asin])?;
+        tx.execute(
+            "INSERT INTO book_link (local_id, asin, state, at) VALUES (?1, ?2, 'linked', datetime('now'))
+             ON CONFLICT(local_id, asin) DO UPDATE SET state = 'linked', at = datetime('now')",
+            [local_id, asin],
+        )?;
+        tx.commit()
+    }
+
+    /// "Not this book": never suggest this pair again.
+    pub fn dismiss_link(&self, local_id: &str, asin: &str) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "INSERT INTO book_link (local_id, asin, state, at) VALUES (?1, ?2, 'dismissed', datetime('now'))
+             ON CONFLICT(local_id, asin) DO UPDATE SET state = 'dismissed', at = datetime('now')",
+            [local_id, asin],
+        )?;
+        Ok(())
+    }
+
+    /// Undo a link (the pair is then not suggested again).
+    pub fn unlink_book(&self, local_id: &str) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        conn.execute("UPDATE book_link SET state = 'dismissed', at = datetime('now') WHERE local_id = ?1 AND state = 'linked'", [local_id])?;
+        Ok(())
+    }
+
+    /// Books added from this computer: (count, total bytes of the copies).
+    pub fn local_usage(&self) -> rusqlite::Result<(i64, i64)> {
+        let conn = self.0.lock().unwrap();
+        conn.query_row("SELECT COUNT(*), COALESCE(SUM(size), 0) FROM local_file", [], |r| Ok((r.get(0)?, r.get(1)?)))
     }
 
     /// Take a book off the library: the book and what derives from it go;
@@ -354,6 +403,8 @@ impl Db {
                     last_read: r.get(23)?,
                     source: r.get(29)?,
                     file_missing: false,
+                    linked_asin: None,
+                    kindle_match: None,
                     asin,
                 })
             })?
@@ -656,6 +707,11 @@ pub struct LibraryRow {
     pub source: String,
     /// A local book whose copy in the app's data folder is gone.
     pub file_missing: bool,
+    /// Local books: the Kindle book the user linked it to.
+    pub linked_asin: Option<String>,
+    /// Local books: a Kindle book that looks like the same title (suggested,
+    /// not linked yet).
+    pub kindle_match: Option<String>,
 }
 
 /// A book added from this computer, as it is first stored.
@@ -687,6 +743,7 @@ fn delete_book_rows(tx: &rusqlite::Transaction, asin: &str) -> rusqlite::Result<
     for table in ["book", "book_meta", "reading_state", "reader_position", "book_override", "shelf_order"] {
         tx.execute(&format!("DELETE FROM {table} WHERE asin = ?1"), [asin])?;
     }
+    tx.execute("DELETE FROM book_link WHERE local_id = ?1 OR asin = ?1", [asin])?;
     Ok(())
 }
 
@@ -772,6 +829,13 @@ CREATE TABLE IF NOT EXISTS local_file (
     original_name TEXT,
     isbn          TEXT,
     added_at      TEXT
+);
+CREATE TABLE IF NOT EXISTS book_link (
+    local_id TEXT NOT NULL,
+    asin     TEXT NOT NULL,
+    state    TEXT NOT NULL,
+    at       TEXT,
+    PRIMARY KEY (local_id, asin)
 );
 CREATE TABLE IF NOT EXISTS reader_position (
     asin       TEXT PRIMARY KEY,

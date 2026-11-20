@@ -9,6 +9,7 @@ mod dict;
 mod goodreads;
 mod library_meta;
 mod local;
+mod local_io;
 mod meta;
 mod stats;
 mod stk;
@@ -74,6 +75,17 @@ pub fn run() {
             local::remove_local_book,
             local::reveal_local_book,
             local::local_book_info,
+            local::cancel_import,
+            local::link_book,
+            local::dismiss_link,
+            local::unlink_book,
+            local::local_usage,
+            local_io::watch_folders,
+            local_io::set_watch_folders,
+            local_io::scan_watch_folders,
+            local_io::export_local_library,
+            local_io::import_local_library,
+            local_io::export_file_name,
             commands::sync_library,
             commands::get_library,
             commands::download_book,
