@@ -6,6 +6,7 @@ mod commands;
 mod creds;
 mod db;
 mod dict;
+mod goodreads;
 mod library_meta;
 mod meta;
 mod stats;
@@ -114,6 +115,12 @@ pub fn run() {
             bookmarks::list_bookmarks,
             bookmarks::add_bookmark,
             bookmarks::remove_bookmark,
+            goodreads::goodreads_info,
+            goodreads::goodreads_details,
+            goodreads::goodreads_candidates,
+            goodreads::goodreads_choose,
+            goodreads::goodreads_reset,
+            goodreads::goodreads_translate,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

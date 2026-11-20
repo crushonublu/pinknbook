@@ -2049,3 +2049,69 @@ button.rside__item:hover { background: color-mix(in srgb, var(--r-fg) 7%, transp
 @keyframes upd-busy { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
 .upd__status { font-size: 12.5px; }
 @media (prefers-reduced-motion: reduce) { .upd, .upd__fill--busy { animation: none; } }
+
+/* ───────────── Goodreads section of the book page (src/GoodreadsCard.tsx) ───────────── */
+.gr { --star: #e9a23b; display: flex; flex-direction: column; gap: 12px; text-align: left; align-self: stretch; }
+.gr h3 { margin: 0; }
+.gr__head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.gr__status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; font-size: 14px; }
+.gr__summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; }
+.gr__score { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; }
+.gr__num { font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.gr__counts { font-size: 13.5px; }
+.gr__facts { margin: 0; flex-basis: 100%; }
+.gr__match { display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; }
+.gr__match .linkbtn { font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
+.stars { position: relative; display: inline-block; color: color-mix(in srgb, var(--muted) 45%, transparent); letter-spacing: 1px; line-height: 1; white-space: nowrap; }
+.stars--lg { font-size: 28px; letter-spacing: 3px; }
+.detail__about-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; }
+.detail__about-head h3 { margin: 0; }
+.stars__on { position: absolute; inset: 0 auto 0 0; overflow: hidden; color: var(--star); }
+.gr__dist { display: flex; flex-direction: column; gap: 4px; max-width: 420px; font-size: 12.5px; }
+.gr__distrow { display: grid; grid-template-columns: 48px 1fr 38px; align-items: center; gap: 10px; }
+.gr__distlabel { color: var(--muted); white-space: nowrap; }
+.gr__distbar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.gr__distbar > span { display: block; height: 100%; border-radius: inherit; background: var(--star); }
+.gr__distpct { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.gr__reviews { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+.gr__reviews h4 { margin: 0; font-size: 15px; }
+.gr__reviewlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.gr__review { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.gr__reviewhead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.gr__avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex: none; background: var(--surface); }
+.gr__avatar--blank { display: grid; place-items: center; font-size: 14px; font-weight: 700; color: var(--muted); }
+.gr__who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gr__who .small { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gr__name { font: inherit; font-weight: 600; font-size: 14px; color: var(--text); background: none; border: none; padding: 0; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+span.gr__name { cursor: default; }
+button.gr__name:hover { text-decoration: underline; }
+.gr__reviewtext {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden;
+  font: inherit; font-size: 14.5px; line-height: 1.6; color: var(--text); text-align: left;
+  background: none; border: none; padding: 0; width: 100%; cursor: pointer;
+}
+.gr__reviewtext.is-open { display: block; -webkit-line-clamp: unset; }
+.gr__reviewtext p { margin: 0 0 .6em; }
+.gr__reviewtext p:last-child { margin-bottom: 0; }
+.gr__source { margin: 0; }
+.gr__translate { margin-left: auto; align-self: flex-start; font-size: 12.5px; white-space: nowrap; }
+.gr__translate:disabled { cursor: default; opacity: .7; }
+.gr__trnote { margin: 8px 0 0; }
+.gr__picker { display: flex; flex-direction: column; gap: 10px; }
+.gr__picker > p { margin: 0; font-size: 13px; }
+.gr__pickform { display: flex; gap: 8px; flex-wrap: wrap; }
+.gr__candidates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+.gr__candidate {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px;
+  font: inherit; color: var(--text); text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+}
+.gr__candidate:hover, .gr__candidate:focus-visible { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); }
+.gr__candidate img, .gr__thumb { width: 34px; height: 50px; object-fit: cover; border-radius: 3px; flex: none; background: var(--surface); }
+.gr__thumb { display: grid; place-items: center; color: var(--muted); }
+.gr__candinfo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gr__candtitle { font-size: 14px; font-weight: 600; }
+.gr__pickactions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .gr__head, .gr__summary { justify-content: center; }
+}

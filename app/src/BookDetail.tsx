@@ -3,8 +3,9 @@ import { STR, type Lang } from "./i18n";
 import { STATUS_ORDER, type LibraryRow, type ReadStatus } from "./types";
 import { BookCover, coverUrl } from "./BookCover";
 import { Icon } from "./icons";
-import { isReadable, languageName, relativeTime, statusLabel } from "./bookInfo";
+import { isReadable, relativeTime, statusLabel } from "./bookInfo";
 import { SHARED } from "./transitions";
+import GoodreadsCard, { useGoodreads } from "./GoodreadsCard";
 
 /**
  * A book's page: big cover on a blurred wash of itself, title and author,
@@ -35,7 +36,12 @@ export default function BookDetail({
   const pct = row.percent != null ? Math.round(row.percent) : 0;
   const bg = coverUrl(row);
   const lastRead = relativeTime(lang, row.last_read);
-  const language = languageName(lang, row.language);
+  const gr = useGoodreads(row.asin);
+  // "About" comes from Goodreads only: the book file's own description is
+  // often a download-site watermark. Full description from the book page,
+  // else the short blurb from the search suggestion.
+  const description = gr.st?.details?.description || gr.st?.book?.description || null;
+  const descFromGr = !!description;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -48,7 +54,7 @@ export default function BookDetail({
   useLayoutEffect(() => {
     const el = descRef.current;
     setOverflows(!!el && el.scrollHeight > el.clientHeight + 4);
-  }, [row.description]);
+  }, [description]);
 
   return (
     <div className="detail" role="dialog" aria-modal="true" aria-label={row.title}>
@@ -113,24 +119,14 @@ export default function BookDetail({
             </label>
           </div>
 
-          <dl className="facts">
-            {language && (
-              <div>
-                <dt>{t.fieldLanguage}</dt>
-                <dd>{language}</dd>
-              </div>
-            )}
-            <div>
-              <dt>{t.fieldType}</dt>
-              <dd>{row.cde_type === "EBOK" ? t.purchased : t.docs}</dd>
-            </div>
-            {row.publisher && (
+          {row.publisher && (
+            <dl className="facts">
               <div>
                 <dt>NXB</dt>
                 <dd>{row.publisher}</dd>
               </div>
-            )}
-          </dl>
+            </dl>
+          )}
 
           {row.subjects.length > 0 && (
             <div className="tags" aria-label={t.fieldSubjects}>
@@ -143,11 +139,14 @@ export default function BookDetail({
             </div>
           )}
 
-          {row.description && (
+          {description && (
             <section className="detail__about">
-              <h3>{t.about}</h3>
+              <div className="detail__about-head">
+                <h3>{t.about}</h3>
+                {descFromGr && <span className="small muted">{t.grAboutSource}</span>}
+              </div>
               <div ref={descRef} className={`detail__desc${expanded ? " is-open" : ""}`}>
-                {row.description.split(/\n{2,}/).map((p, i) => (
+                {description.split(/\n{2,}/).map((p, i) => (
                   <p key={i}>{p}</p>
                 ))}
               </div>
@@ -158,6 +157,8 @@ export default function BookDetail({
               )}
             </section>
           )}
+
+          <GoodreadsCard row={row} lang={lang} gr={gr} />
         </div>
       </div>
     </div>

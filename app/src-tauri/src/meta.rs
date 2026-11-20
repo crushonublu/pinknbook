@@ -22,6 +22,10 @@ pub struct FileMeta {
     pub language: Option<String>,
     /// Raw bytes of the embedded cover image (usually JPEG).
     pub cover: Option<Vec<u8>>,
+    /// ISBN-10/13 (EXTH 104), digits and X only.
+    pub isbn: Option<String>,
+    /// An Amazon ASIN written into the file (EXTH 113 / 504), if it looks like one.
+    pub asin: Option<String>,
 }
 
 fn be_u16(d: &[u8], o: usize) -> Option<u16> {
@@ -99,6 +103,12 @@ pub fn parse_mobi(data: &[u8]) -> Option<FileMeta> {
     meta.publisher = text(101);
     meta.description = text(103).map(|d| strip_html(&d));
     meta.language = text(524);
+    meta.isbn = text(104)
+        .map(|s| s.chars().filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x').collect::<String>().to_ascii_uppercase())
+        .filter(|s| s.len() == 10 || s.len() == 13);
+    meta.asin = text(113)
+        .or_else(|| text(504))
+        .filter(|s| s.len() == 10 && s.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()));
     meta.subjects = exth
         .get(&105)
         .map(|v| {
@@ -140,7 +150,7 @@ pub fn image_ext(b: &[u8]) -> &'static str {
 }
 
 /// Very small HTML → text for EXTH descriptions.
-fn strip_html(s: &str) -> String {
+pub fn strip_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_tag = false;
     let mut tag = String::new();
