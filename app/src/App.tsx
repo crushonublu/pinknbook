@@ -25,6 +25,7 @@ import { KindlePushDialog, wantsKindlePush, type KindlePushRequest } from "./Kin
 import { DropOverlay, isEpub, SendDialog, useSendQueue } from "./SendToKindle";
 import { BadgeToasts, StatsPage, StreakButton, useStats } from "./Stats";
 import { VocabPage } from "./Vocab";
+import { UpdateBanner, useUpdater } from "./Updater";
 import "./App.css";
 
 function useStored<T extends string>(key: string, initial: T): [T, (v: T) => void] {
@@ -74,6 +75,7 @@ export default function App() {
   /** Where to open the book being read (a saved word's place), if not the saved position. */
   const [readAt, setReadAt] = useState<string | null>(null);
   const stats = useStats(auth === "in");
+  const updater = useUpdater();
 
   // Send to Kindle: the queue outlives the dialog.
   const [showSend, setShowSend] = useState(false);
@@ -388,6 +390,8 @@ export default function App() {
           setTheme={setTheme}
           deviceName={auth === "in" ? account?.device_name : undefined}
           onSignOut={auth === "in" ? doLogout : undefined}
+          checkState={updater.checkState}
+          onCheckUpdate={updater.checkNow}
         />
         <span className="titlebar__sep" />
         <WindowControls labels={{ minimize: t.winMinimize, maximize: t.winMaximize, restore: t.winRestore, close: t.winClose }} />
@@ -557,6 +561,7 @@ export default function App() {
       )}
       {showSend && auth === "in" && <SendDialog lang={lang} queue={sendQueue} onClose={() => setShowSend(false)} />}
       {dragging && <DropOverlay lang={lang} />}
+      {!reading && <UpdateBanner lang={lang} updater={updater} />}
 
       {kindlePush && (
         <KindlePushDialog

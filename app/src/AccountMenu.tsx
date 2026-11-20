@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { STR, type Lang } from "./i18n";
 import { Icon } from "./icons";
+import type { CheckState } from "./Updater";
 
 /**
  * One title-bar button for everything that is not about the books: device,
@@ -13,6 +15,8 @@ export function AccountMenu({
   setTheme,
   deviceName,
   onSignOut,
+  checkState,
+  onCheckUpdate,
 }: {
   lang: Lang;
   setLang: (l: Lang) => void;
@@ -20,10 +24,17 @@ export function AccountMenu({
   setTheme: (t: "light" | "dark") => void;
   deviceName?: string;
   onSignOut?: () => void;
+  checkState: CheckState;
+  onCheckUpdate: () => void;
 }) {
   const t = STR[lang];
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    getVersion().then(setVersion, () => undefined);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -102,6 +113,27 @@ export function AccountMenu({
               ))}
             </div>
           </div>
+          <div className="menu__sep" />
+          <button
+            className="menu__item"
+            role="menuitem"
+            disabled={checkState === "checking"}
+            onClick={onCheckUpdate}
+          >
+            <Icon name="refresh" size={17} className={checkState === "checking" ? "icon--spin" : undefined} />
+            <span className="menu__stack">
+              {t.checkUpdate}
+              <span className={`menu__sub${checkState === "failed" ? " menu__sub--error" : ""}`}>
+                {checkState === "checking"
+                  ? t.updChecking
+                  : checkState === "latest"
+                    ? t.updLatest
+                    : checkState === "failed"
+                      ? t.updCheckFailed
+                      : version && t.appVersion.replace("{0}", version)}
+              </span>
+            </span>
+          </button>
           {onSignOut && (
             <>
               <div className="menu__sep" />

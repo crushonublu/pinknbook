@@ -48,6 +48,13 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // Self-update from GitHub Releases (signed with the updater key),
+            // and `relaunch()` once the new installer has run.
+            #[cfg(desktop)]
+            {
+                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+                app.handle().plugin(tauri_plugin_process::init())?;
+            }
             // Local SQLite under the app's data dir.
             let data_dir = app.path().app_data_dir()?;
             let db_path = data_dir.join("pinknbook.sqlite");
