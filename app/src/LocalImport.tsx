@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { STR, type Lang } from "./i18n";
 import { Icon, type IconName } from "./icons";
+import { isAndroid } from "./platform";
 
 /** One file's outcome (mirrors `local::ImportResult`). */
 export interface ImportResult {
@@ -368,6 +369,8 @@ export function LocalLibraryDialog({
           </button>
         </div>
 
+        {!isAndroid && (
+        <>
         <section className="locallib__sec">
           <h3>{t.watchTitle}</h3>
           <p className="small muted">{t.watchHint}</p>
@@ -418,6 +421,8 @@ export function LocalLibraryDialog({
             </button>
           </div>
         </section>
+        </>
+        )}
 
         {msg && <p className={`small locallib__msg${msg.error ? " locallib__msg--error" : ""}`}>{msg.text}</p>}
       </div>

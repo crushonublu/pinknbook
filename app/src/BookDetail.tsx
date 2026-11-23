@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { isAndroid } from "./platform";
 import { STR, type Lang } from "./i18n";
 import { STATUS_ORDER, type LibraryRow, type ReadStatus } from "./types";
 import { BookCover, coverUrl } from "./BookCover";
@@ -170,7 +171,7 @@ export default function BookDetail({
                 <Icon name="monitor" size={13} />
                 {t.localBadge}
               </span>
-              {!row.file_missing && (
+              {!row.file_missing && !isAndroid && (
                 <button
                   className="linkbtn"
                   onClick={() =>
@@ -185,7 +186,7 @@ export default function BookDetail({
                   {t.removeBook}
                 </button>
               )}
-              {!row.file_missing && (
+              {!row.file_missing && !isAndroid && (
                 <button
                   className="linkbtn"
                   onClick={onSendToKindle}

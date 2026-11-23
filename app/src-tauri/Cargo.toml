@@ -32,7 +32,7 @@ hex = "0.4.3"
 chrono = "0.4.38"
 
 # HTTP + parsing
-reqwest = { version = "0.12.7", default-features = false, features = ["gzip", "rustls-tls", "native-tls", "json", "stream"] }
+reqwest = { version = "0.12.7", default-features = false, features = ["gzip", "rustls-tls", "json", "stream"] }
 roxmltree = "0.20.0"
 url = "2.5.2"
 
@@ -51,6 +51,8 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 futures-util = "0.3"
 flate2 = "1"
 tauri-plugin-dialog = "2"
+# Reads the content:// URIs Android's file picker returns.
+tauri-plugin-fs = "2"
 
 [dev-dependencies]
 # For the ignored, read-only live library-pull test.
@@ -64,6 +66,11 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Windows' own TLS stack: the fallback when Google Translate rate-limits the
+# rustls client (it needs OpenSSL elsewhere, e.g. on Android).
+[target.'cfg(windows)'.dependencies]
+reqwest = { version = "0.12.7", default-features = false, features = ["native-tls"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-process = "2"

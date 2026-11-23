@@ -677,12 +677,15 @@ async fn translate_with_retry(text: &str, target: &str) -> Result<Translation, S
     match google_translate(&client()?, text, target).await {
         Err(e) if e == RATE_LIMITED => {
             tokio::time::sleep(Duration::from_millis(1500)).await;
+            #[cfg(windows)]
             let alt = reqwest::Client::builder()
                 .use_native_tls()
                 .user_agent(concat!("pntome/", env!("CARGO_PKG_VERSION")))
                 .timeout(Duration::from_secs(15))
                 .build()
                 .map_err(|e| e.to_string())?;
+            #[cfg(not(windows))]
+            let alt = client()?;
             google_translate(&alt, text, target).await
         }
         other => other,

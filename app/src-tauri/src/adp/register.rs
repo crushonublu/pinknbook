@@ -6,6 +6,9 @@
 //!   authorize `openid.oa2.client_id` = "device:" + hex(serial "#" device_type)
 //!   register  `auth_data.client_id`  =            hex(serial "#" device_type)   (no "device:")
 
+// The sign-in flow only runs on desktop for now (see commands::login).
+#![cfg_attr(mobile, allow(dead_code))]
+
 use base64::Engine;
 use rand::Rng;
 use sha2::{Digest, Sha256};

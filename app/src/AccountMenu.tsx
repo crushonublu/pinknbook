@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { STR, type Lang } from "./i18n";
 import { Icon } from "./icons";
 import type { CheckState } from "./Updater";
+import { isAndroid } from "./platform";
 
 /**
  * One title-bar button for everything that is not about the books: device,
@@ -146,7 +147,8 @@ export function AccountMenu({
               </button>
             </>
           )}
-          <div className="menu__sep" />
+          {!isAndroid && <div className="menu__sep" />}
+          {!isAndroid && (
           <button
             className="menu__item"
             role="menuitem"
@@ -167,6 +169,7 @@ export function AccountMenu({
               </span>
             </span>
           </button>
+          )}
           {onSignIn && (
             <>
               <div className="menu__sep" />

@@ -1,9 +1,13 @@
 //! Tauri commands exposed to the React UI, plus the OAuth login flow.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(desktop)]
 use std::sync::Arc;
+#[cfg(desktop)]
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State};
+#[cfg(desktop)]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 use crate::adp::client;
 use crate::adp::register;
@@ -29,36 +33,46 @@ pub fn auth_status() -> Result<Option<AccountInfo>, String> {
 /// Emits `login-complete` (AccountInfo) or `login-error` (String) when done.
 #[tauri::command]
 pub async fn login(app: AppHandle) -> Result<(), String> {
-    let (url, pending) = register::build_login_url(register::DEVICE_TYPE);
-    let parsed: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
+    // Phones get one window: the sign-in page cannot open beside the app yet.
+    #[cfg(mobile)]
+    {
+        let _ = app;
+        return Err("Amazon sign-in is not available on Android yet".into());
+    }
+    #[cfg(desktop)]
+    {
+        let (url, pending) = register::build_login_url(register::DEVICE_TYPE);
+        let parsed: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
 
-    let done = Arc::new(AtomicBool::new(false));
-    let app_for_nav = app.clone();
+        let done = Arc::new(AtomicBool::new(false));
+        let app_for_nav = app.clone();
 
-    WebviewWindowBuilder::new(&app, "login", WebviewUrl::External(parsed))
-        .title("Đăng nhập Amazon — pntome")
-        .inner_size(480.0, 760.0)
-        .on_navigation(move |nav_url| {
-            // Amazon redirects to /ap/maplanding?...authorization_code=... on success.
-            if nav_url.path().contains("/ap/maplanding") {
-                if done.swap(true, Ordering::SeqCst) {
-                    return false; // already handling
+        WebviewWindowBuilder::new(&app, "login", WebviewUrl::External(parsed))
+            .title("Đăng nhập Amazon — pntome")
+            .inner_size(480.0, 760.0)
+            .on_navigation(move |nav_url| {
+                // Amazon redirects to /ap/maplanding?...authorization_code=... on success.
+                if nav_url.path().contains("/ap/maplanding") {
+                    if done.swap(true, Ordering::SeqCst) {
+                        return false; // already handling
+                    }
+                    let redirect = nav_url.to_string();
+                    let app = app_for_nav.clone();
+                    let pending = pending.clone();
+                    tauri::async_runtime::spawn(async move {
+                        complete_login(app, pending, redirect).await;
+                    });
+                    return false; // stop loading the landing page
                 }
-                let redirect = nav_url.to_string();
-                let app = app_for_nav.clone();
-                let pending = pending.clone();
-                tauri::async_runtime::spawn(async move {
-                    complete_login(app, pending, redirect).await;
-                });
-                return false; // stop loading the landing page
-            }
-            true
-        })
-        .build()
-        .map_err(|e| e.to_string())?;
-    Ok(())
+                true
+            })
+            .build()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
 }
 
+#[cfg_attr(mobile, allow(dead_code))]
 async fn complete_login(app: AppHandle, pending: register::PendingRegistration, redirect: String) {
     let result: Result<AccountInfo, String> = async {
         let code = register::extract_code(&redirect)
@@ -106,7 +120,11 @@ pub fn logout(app: AppHandle, clear_kindle: Option<bool>) -> Result<(), String> 
     let db: State<Db> = app.state();
     crate::stats::set_setting(&db, GUEST_KEY, "1")?;
     if clear_kindle == Some(true) {
-        let books_dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("books");
+        let books_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("books");
         for asin in db.prune_books(&[]).map_err(|e| e.to_string())? {
             let _ = std::fs::remove_file(books_dir.join(format!("{asin}.azw3")));
         }
@@ -162,7 +180,10 @@ pub async fn sync_library(app: AppHandle) -> Result<usize, String> {
     // (one request each, the slow part) fills in below.
     let _ = app.emit("library-changed", ());
     let total = books.len();
-    let _ = app.emit("sync-progress", serde_json::json!({"done": 0, "total": total}));
+    let _ = app.emit(
+        "sync-progress",
+        serde_json::json!({"done": 0, "total": total}),
+    );
 
     // Reading state per book — best-effort, sequential (low request frequency).
     // The percentage needs the book's total length; we only have that for books
@@ -194,7 +215,9 @@ pub async fn sync_library(app: AppHandle) -> Result<usize, String> {
 pub fn get_library(app: AppHandle, db: State<Db>) -> Result<Vec<LibraryRow>, String> {
     let mut rows = db.list_library().map_err(|e| e.to_string())?;
     for r in rows.iter_mut().filter(|r| r.source == "local") {
-        r.file_missing = !crate::local::book_path(&app, &r.asin).map(|p| p.exists()).unwrap_or(false);
+        r.file_missing = !crate::local::book_path(&app, &r.asin)
+            .map(|p| p.exists())
+            .unwrap_or(false);
     }
     crate::local::attach_links(&mut rows, &db.book_links().map_err(|e| e.to_string())?);
     Ok(rows)
@@ -238,8 +261,12 @@ pub async fn download_book(
     // First open of a book downloaded here: read its cover + metadata.
     {
         let db: State<Db> = app.state();
-        if !db.has_file_meta(&asin) && crate::library_meta::ingest_file(&app, &asin, &bytes).is_ok() {
-            let _ = app.emit("meta-progress", serde_json::json!({"done": 1, "total": 1, "asin": asin}));
+        if !db.has_file_meta(&asin) && crate::library_meta::ingest_file(&app, &asin, &bytes).is_ok()
+        {
+            let _ = app.emit(
+                "meta-progress",
+                serde_json::json!({"done": 1, "total": 1, "asin": asin}),
+            );
         }
     }
 
@@ -341,8 +368,15 @@ pub async fn push_status_to_kindle(
     let total = db
         .text_length(&asin)
         .or_else(|| {
-            let cache = app.path().app_data_dir().ok()?.join("books").join(format!("{asin}.azw3"));
-            std::fs::read(cache).ok().and_then(|b| client::mobi_total_positions(&b))
+            let cache = app
+                .path()
+                .app_data_dir()
+                .ok()?
+                .join("books")
+                .join(format!("{asin}.azw3"));
+            std::fs::read(cache)
+                .ok()
+                .and_then(|b| client::mobi_total_positions(&b))
         })
         .filter(|t| *t > 0)
         .ok_or_else(|| "book total length unavailable (open the book first)".to_string())?;

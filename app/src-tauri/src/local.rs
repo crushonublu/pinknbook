@@ -196,6 +196,10 @@ fn same_key(s: &str) -> String {
 
 pub(crate) fn import_one(app: &AppHandle, path: &Path) -> ImportResult {
     let label = path.to_string_lossy().into_owned();
+    // Android's file picker hands out content:// URIs, not paths.
+    if label.starts_with("content://") {
+        return import_uri(app, &label);
+    }
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     match std::fs::read(path) {
         Ok(bytes) => import_bytes(app, &bytes, label, name),
@@ -208,6 +212,35 @@ pub(crate) fn import_one(app: &AppHandle, path: &Path) -> ImportResult {
             similar: None,
             large: false,
             error: Some(e.to_string()),
+        },
+    }
+}
+
+/// A content:// URI (Android): read it through the fs plugin. Its last
+/// segment, decoded, is the closest thing to a file name it has.
+fn import_uri(app: &AppHandle, uri: &str) -> ImportResult {
+    use tauri_plugin_fs::FsExt;
+    let tail = uri.rsplit('/').next().unwrap_or(uri);
+    let decoded = url::form_urlencoded::parse(format!("x={tail}").as_bytes())
+        .next()
+        .map(|(_, v)| v.into_owned())
+        .unwrap_or_else(|| tail.to_string());
+    let name = decoded.rsplit(['/', ':']).next().unwrap_or(&decoded).to_string();
+    let read = uri
+        .parse::<tauri_plugin_fs::FilePath>()
+        .map_err(|e| e.to_string())
+        .and_then(|fp| app.fs().read(fp).map_err(|e| e.to_string()));
+    match read {
+        Ok(bytes) => import_bytes(app, &bytes, uri.to_string(), name),
+        Err(e) => ImportResult {
+            path: uri.to_string(),
+            name,
+            status: "error".into(),
+            id: None,
+            title: None,
+            similar: None,
+            large: false,
+            error: Some(e),
         },
     }
 }

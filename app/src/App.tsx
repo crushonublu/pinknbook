@@ -20,6 +20,7 @@ import { bookKind, statusLabel } from "./bookInfo";
 import { coverOf, morph } from "./transitions";
 import { AccountMenu } from "./AccountMenu";
 import { WindowControls } from "./WindowControls";
+import { isAndroid } from "./platform";
 import { Icon } from "./icons";
 import { KindlePushDialog, wantsKindlePush, type KindlePushRequest } from "./KindlePush";
 import { SendDialog, useSendQueue } from "./SendToKindle";
@@ -118,7 +119,7 @@ export default function App() {
   // Dropping files or folders anywhere in the window adds them to the library
   // (Send to Kindle has its own button).
   useEffect(() => {
-    if (!hasLib) return;
+    if (!hasLib || isAndroid) return;
     const un = getCurrentWebview().onDragDropEvent((e) => {
       const p = e.payload;
       if (p.type === "enter") setDragging(p.paths.length > 0);
@@ -207,7 +208,7 @@ export default function App() {
 
   // Books added from watched folders: soon after opening, then every few minutes.
   useEffect(() => {
-    if (!hasLib) return;
+    if (!hasLib || isAndroid) return;
     const run = () => localImportRef.current.scan();
     const first = window.setTimeout(run, 3000);
     const every = window.setInterval(run, 3 * 60 * 1000);
@@ -535,13 +536,17 @@ export default function App() {
           deviceName={auth === "in" ? account?.device_name : undefined}
           guest={auth === "guest"}
           onSignOut={auth === "in" ? () => setAskLogout(true) : undefined}
-          onSignIn={auth === "guest" ? doLogin : undefined}
+          onSignIn={auth === "guest" && !isAndroid ? doLogin : undefined}
           onLocalLibrary={hasLib ? () => setShowLocalLib(true) : undefined}
           checkState={updater.checkState}
           onCheckUpdate={updater.checkNow}
         />
-        <span className="titlebar__sep" />
-        <WindowControls labels={{ minimize: t.winMinimize, maximize: t.winMaximize, restore: t.winRestore, close: t.winClose }} />
+        {!isAndroid && (
+          <>
+            <span className="titlebar__sep" />
+            <WindowControls labels={{ minimize: t.winMinimize, maximize: t.winMaximize, restore: t.winRestore, close: t.winClose }} />
+          </>
+        )}
       </header>
 
       {/* Everything below the title bar scrolls; the bar never moves. */}
@@ -581,12 +586,14 @@ export default function App() {
               </button>
               <span className="small muted">{t.welcomeLead}</span>
             </div>
-            <div className="hero__choice">
-              <button className="btn btn--lg" disabled={!!busy} onClick={doLogin}>
-                {busy ? busy : t.signIn}
-              </button>
-              <span className="small muted">{t.welcomeAmazon}</span>
-            </div>
+            {!isAndroid && (
+              <div className="hero__choice">
+                <button className="btn btn--lg" disabled={!!busy} onClick={doLogin}>
+                  {busy ? busy : t.signIn}
+                </button>
+                <span className="small muted">{t.welcomeAmazon}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -791,7 +798,7 @@ export default function App() {
           onConfirm={() => removeLocal(removing)}
         />
       )}
-      {!reading && <UpdateBanner lang={lang} updater={updater} />}
+      {!reading && !isAndroid && <UpdateBanner lang={lang} updater={updater} />}
 
       {kindlePush && (
         <KindlePushDialog

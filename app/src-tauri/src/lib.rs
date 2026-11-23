@@ -22,6 +22,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         // Book covers: cover://<file> → <app_data>/covers/<file>
         .register_uri_scheme_protocol("cover", |ctx, req| {
             use tauri::http::{header, Response, StatusCode};

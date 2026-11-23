@@ -20,6 +20,7 @@ import { XRayGraph } from "./XRayGraph";
 import { isLookupSize, lookupCandidates, selectionContext, sentenceAround } from "./dictionary";
 import { FootnotePopup, isNoteRef, loadFootnote, noteContent, type FootnotePeek } from "./Footnote";
 import { WindowControls } from "./WindowControls";
+import { isAndroid } from "./platform";
 
 interface ReaderStart {
   cfi: string | null;
@@ -1271,10 +1272,14 @@ export default function Reader({
           <span className="reader__aa-s">A</span>
           <span className="reader__aa-l">a</span>
         </button>
-        <span className="titlebar__sep" />
-        <WindowControls
-          labels={{ minimize: t.winMinimize, maximize: t.winMaximize, restore: t.winRestore, close: t.winClose }}
-        />
+        {!isAndroid && (
+          <>
+            <span className="titlebar__sep" />
+            <WindowControls
+              labels={{ minimize: t.winMinimize, maximize: t.winMaximize, restore: t.winRestore, close: t.winClose }}
+            />
+          </>
+        )}
         {showSettings && (
           <ReaderSettings
             prefs={prefs}
