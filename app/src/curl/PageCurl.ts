@@ -16,8 +16,9 @@
  * automatic curl; dragging from a page edge holds the fold under the finger.
  * Let go past the middle (or flick) and the page turns, otherwise it falls back.
  */
-import { mirror, solveCurl, type Vec } from "./geometry";
-import { backTexture, drawCurl, pageTexture, type Scene } from "./render";
+import { mirror, solveCurl, solveCurlInto, type Vec, type Curl } from "./geometry";
+import { backTexture, pageTexture, type Scene } from "./render";
+import { CanvasCurlRenderer, WebGLCurlRenderer, type CurlRenderer } from "./webgl";
 import { snapshotPage } from "./snapshot";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -109,6 +110,7 @@ interface Drag {
   y: number;
   moved: number;
   samples: { x: number; t: number }[];
+  sampleIndex: number;
   prep: Promise<Prep | null | "nocurl">;
   ready: Prep | null;
   G: Vec | null;
@@ -118,6 +120,8 @@ interface Drag {
 export interface PageCurlOptions {
   /** Disable mouse edge overlays for iframe-owned touch gestures. */
   zones?: boolean;
+  /** Android opt-in; desktop retains Canvas 2D. */
+  renderer?: "webgl";
   /** Use only ready bitmaps: a cold mobile turn must never wait for snapshots. */
   readyOnly?: boolean;
   navigate?: (dir: Dir) => Promise<void>;
@@ -129,6 +133,10 @@ export class PageCurl {
 
   private canvas = document.createElement("canvas");
   private ctx = this.canvas.getContext("2d")!;
+  private renderer: CurlRenderer;
+  private gpuCurl: Curl = { G: { x: 0, y: 0 }, F: { x: 0, y: 0 }, u: { x: -1, y: 0 }, a: 0, R: 0 };
+  private finger: Vec = { x: 0, y: 0 };
+  private touchMove = { pointerId: -1, clientX: 0, clientY: 0 };
   private zones: HTMLDivElement[] = [];
   private cache = new Map<string, Promise<HTMLCanvasElement>>();
   private readySnapshots = new Map<string, HTMLCanvasElement>();
@@ -151,6 +159,12 @@ export class PageCurl {
     this.canvas.setAttribute("aria-hidden", "true");
     this.canvas.style.display = "none";
     host.append(this.canvas);
+    const fallback = new CanvasCurlRenderer(this.ctx);
+    this.renderer = fallback;
+    if (options.renderer === "webgl") {
+      try { this.renderer = new WebGLCurlRenderer(fallback, this.canvas); }
+      catch { /* WebGL unavailable: retain Canvas 2D. */ }
+    }
     for (const dir of (options.zones === false ? [] : [-1, 1]) as Dir[]) {
       const z = document.createElement("div");
       z.className = `curl-zone curl-zone--${dir < 0 ? "prev" : "next"}`;
@@ -179,6 +193,7 @@ export class PageCurl {
     this.view.removeEventListener("relocate", this.onRelocate);
     this.view.removeEventListener("load", this.onRelocate);
     this.resizeObs.disconnect();
+    this.renderer.destroy();
     this.canvas.remove();
     this.zones.forEach((z) => z.remove());
     this.cache.clear();
@@ -216,7 +231,8 @@ export class PageCurl {
 
   moveDrag(clientX: number, clientY: number) {
     if (this.drag?.releasing) return;
-    this.onMove({ pointerId: -1, clientX, clientY } as PointerEvent);
+    this.touchMove.clientX=clientX; this.touchMove.clientY=clientY;
+    this.onMove(this.touchMove as PointerEvent);
   }
 
   endDrag(cancelled = false) {
@@ -372,11 +388,13 @@ export class PageCurl {
   }
 
   private hide() {
+    this.renderer.clear();
     this.canvas.style.display = "none";
   }
 
   /** Paint a page snapshot exactly where the live page is. */
   private paint(snap: HTMLCanvasElement, L: Layout) {
+    this.renderer.clear();
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -385,7 +403,8 @@ export class PageCurl {
 
   private render(prep: Prep, F: Vec, G: Vec) {
     const { W, H } = prep.L;
-    drawCurl(this.ctx, prep.scene, solveCurl(G, F, W, H));
+    this.renderer.setScene(prep.scene);
+    this.renderer.draw(this.options.renderer === "webgl" ? solveCurlInto(G, F, W, H, this.gpuCurl) : solveCurl(G, F, W, H));
   }
 
   // ───────────────────────── turning ─────────────────────────
@@ -529,8 +548,10 @@ export class PageCurl {
 
   /** Animate the held point from `from` to `to`, optionally lifting the corner. */
   private animate(prep: Prep, G: Vec, from: Vec, to: Vec, ms: number, ease: (t: number) => number, arc = 0) {
+    const held = this.options.renderer === "webgl" ? { x: 0, y: 0 } : null;
     return this.tween(ms, ease, (t) => {
-      const F = lerp(from, to, t);
+      const F = held ?? lerp(from, to, t);
+      if (held) { F.x=from.x+(to.x-from.x)*t; F.y=from.y+(to.y-from.y)*t; }
       F.y -= arc * Math.sin(Math.PI * t);
       this.render(prep, F, G);
     });
@@ -556,11 +577,13 @@ export class PageCurl {
   // ───────────────────────── dragging ─────────────────────────
 
   /** Finger position in sheet coordinates for the current drag. */
-  private fingerOf(d: Drag, prep: Prep, G: Vec): Vec {
+  private fingerOf(d: Drag, prep: Prep, G: Vec, out?: Vec): Vec {
     const dx = (d.x - d.x0) * prep.scene.m;
     const dy = d.y - d.y0;
-    if (prep.reverse) return { x: -G.x + (dx * 2 * G.x) / prep.L.W, y: G.y + dy };
-    return { x: G.x + dx, y: G.y + dy };
+    const F = out ?? { x: 0, y: 0 };
+    F.x = prep.reverse ? -G.x + (dx * 2 * G.x) / prep.L.W : G.x + dx;
+    F.y = G.y + dy;
+    return F;
   }
 
   private onDown(e: PointerEvent, dir: Dir, zone: HTMLElement | null, startedAt = performance.now()) {
@@ -580,7 +603,8 @@ export class PageCurl {
       x: e.clientX,
       y: e.clientY,
       moved: 0,
-      samples: zone ? [] : [{ x: e.clientX, t: startedAt }],
+      samples: zone ? [] : Array.from({ length: 6 }, (_, i) => ({ x: e.clientX, t: i === 0 ? startedAt : -Infinity })),
+      sampleIndex: 1,
       prep: Promise.resolve("nocurl"),
       ready: null,
       G: null,
@@ -613,7 +637,7 @@ export class PageCurl {
     d.raf = requestAnimationFrame(() => {
       d.raf = 0;
       if (this.drag !== d || !d.ready || !d.G) return;
-      this.render(d.ready, this.fingerOf(d, d.ready, d.G), d.G);
+      this.render(d.ready, this.fingerOf(d, d.ready, d.G, this.options.renderer === "webgl" ? this.finger : undefined), d.G);
     });
   }
 
@@ -624,8 +648,8 @@ export class PageCurl {
     d.y = e.clientY;
     d.moved = Math.max(d.moved, Math.hypot(d.x - d.x0, d.y - d.y0));
     if (!d.zone) {
-      d.samples.push({ x: d.x, t: performance.now() });
-      if (d.samples.length > 6) d.samples.shift();
+      const sample = d.samples[d.sampleIndex % 6];
+      sample.x=d.x; sample.t=performance.now(); d.sampleIndex++;
     } else if (d.ready && d.G) {
       d.samples.push({ x: this.fingerOf(d, d.ready, d.G).x, t: performance.now() });
       if (d.samples.length > 6) d.samples.shift();
@@ -667,6 +691,7 @@ export class PageCurl {
       else {
         // Only recent motion counts as a flick (not a fast drag then a pause).
         const recent = d.samples.filter((s) => s.t > performance.now() - 120);
+        if (!d.zone) recent.sort((a,b) => a.t-b.t);
         const a = recent[0];
         const b = recent[recent.length - 1];
         const velocityScale = d.zone ? 1 : prep.scene.m * (prep.reverse ? 2 * G.x / W : 1);

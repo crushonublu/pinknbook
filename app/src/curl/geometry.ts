@@ -164,3 +164,60 @@ export function maxRolled(c: Curl, W: number, H: number): number {
   ].map((p) => nOf(c, p));
   return c.a - Math.min(...ns);
 }
+
+// Android GPU path: identical solver with reusable output storage.
+function clampFingerInto(G: Vec, F: Vec, H: number, out: Vec): Vec {
+  const r0 = Math.hypot(G.x, G.y), r1 = Math.hypot(G.x, G.y-H);
+  out.x = F.x; out.y = F.y;
+  if (Math.hypot(F.x,F.y) <= r0+1e-6 && Math.hypot(F.x,F.y-H) <= r1+1e-6) return out;
+  out.x = G.x; out.y = G.y;
+  let best = Math.hypot(F.x-G.x,F.y-G.y);
+  const mirrored = Math.hypot(F.x+G.x,F.y-G.y);
+  if (mirrored < best) { out.x = -G.x; best = mirrored; }
+  for (let k = 0; k < 2; k++) {
+    const cy = k ? H : 0, radius = k ? r1 : r0;
+    const d = Math.hypot(F.x,F.y-cy);
+    if (d < 1e-9 || d <= radius+1e-6) continue;
+    const x = F.x*radius/d, y = cy+(F.y-cy)*radius/d;
+    if (Math.hypot(x,y-(k ? 0 : H)) > (k ? r0 : r1)+1e-6) continue;
+    const distance = Math.hypot(F.x-x,F.y-y);
+    if (distance < best) { out.x=x; out.y=y; best=distance; }
+  }
+  return out;
+}
+function radiusForInto(s: number, G: Vec, F: Vec, W: number): number {
+  const pull = 0.4 + 0.6 * Math.min(1, s / (0.5 * W));
+  const land = Math.min(1, Math.hypot(F.x + G.x, F.y - G.y) / (0.6 * W));
+  return 0.11 * W * pull * land;
+}
+/** Supply an output object for allocation-free GPU frames. */
+export function solveCurlInto(G: Vec, Fin: Vec, W: number, H: number, out: Curl): Curl {
+  const result = out;
+  const F = clampFingerInto(G, Fin, H, result.F);
+  result.G = G;
+  const dx = F.x - G.x;
+  const dy = F.y - G.y;
+  const s = Math.hypot(dx, dy);
+  if (s < 0.01) {
+    result.u.x=-1; result.u.y=0; result.a=0; result.R=radiusForInto(0,G,F,W);
+    return result;
+  }
+  const u = result.u;
+  u.x=dx/s; u.y=dy/s;
+  // The axis must not pass the spine corners (they stay on the flat side).
+  const lim = Math.min(-G.x * u.x - G.y * u.y, -G.x * u.x + (H - G.y) * u.y);
+  let R = radiusForInto(s, G, F, W);
+  if (axisFor(s, R) > lim) {
+    let lo = 0;
+    let hi = R;
+    for (let i = 0; i < 30; i++) {
+      const m = (lo + hi) / 2;
+      if (axisFor(s, m) <= lim) lo = m;
+      else hi = m;
+    }
+    R = lo;
+  }
+  const a = Math.max(0, Math.min(lim, axisFor(s, R)));
+  result.a=a; result.R=R;
+  return result;
+}

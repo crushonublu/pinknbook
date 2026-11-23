@@ -73,9 +73,11 @@ console.log(checks+' gesture checks passed');
 // Real curl lifecycle with DOM/bitmap adapters; rasterisation needs a WebView.
 const curlSource=fs.readFileSync('src/curl/PageCurl.ts','utf8');
 const curlJs=ts.transpileModule(curlSource.replace(/^import .*;$/gm,''),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
-const injected=`const mirror=p=>({x:-p.x,y:p.y}); const solveCurl=()=>({}); const drawCurl=()=>{};
+const backendSource=fs.readFileSync('src/curl/webgl.ts','utf8').replace(/^import .*;$/gm,'').replace(/export /g,'');
+const backendJs=ts.transpileModule(backendSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
+const injected=`const mirror=p=>({x:-p.x,y:p.y}); const solveCurl=()=>({}); const solveCurlInto=()=>({}); const drawCurl=()=>{};
 const pageTexture=()=>({}); const backTexture=()=>({}); const snapshotPage=(...a)=>globalThis.testSnapshot(...a);`;
-const {PageCurl}=await import('data:text/javascript;base64,'+Buffer.from(injected+curlJs).toString('base64'));
+const {PageCurl}=await import('data:text/javascript;base64,'+Buffer.from(injected+backendJs+curlJs).toString('base64'));
 class El extends EventTarget {
  style={}; children=[]; width=0; height=0;
  append(el){this.children.push(el);} remove(){} setAttribute(){}

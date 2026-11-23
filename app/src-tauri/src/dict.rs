@@ -19,7 +19,12 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager};
 
 const WIKT_URL: &str = "https://kaikki.org/viwiktionary/raw-wiktextract-data.jsonl.gz";
-const WORDNET_URL: &str = "https://en-word.net/downloads/english-wordnet-2025-json.zip";
+/// The same release file, tried in order: GitHub first (en-word.net is often
+/// down — it answered 503 in Nov 2026), then the project's own site.
+const WORDNET_URLS: &[&str] = &[
+    "https://github.com/globalwordnet/english-wordnet/releases/download/2025-edition/english-wordnet-2025-json.zip",
+    "https://en-word.net/downloads/english-wordnet-2025-json.zip",
+];
 const VERSION: &str = "1";
 /// Senses and examples kept per entry (the popup is small).
 const MAX_SENSES: usize = 12;
@@ -111,7 +116,14 @@ async fn install(app: &AppHandle) -> Result<(), String> {
     let wikt = dir.join("wiktionary.jsonl.gz.part");
     let wn = dir.join("wordnet.zip.part");
     download(app, WIKT_URL, &wikt, "Wiktionary").await?;
-    download(app, WORDNET_URL, &wn, "WordNet").await?;
+    let mut wn_result = Err(String::new());
+    for url in WORDNET_URLS {
+        wn_result = download(app, url, &wn, "WordNet").await;
+        if wn_result.is_ok() {
+            break;
+        }
+    }
+    wn_result?;
 
     let out = dir.join("dict.sqlite");
     let tmp = dir.join("dict.sqlite.part");
