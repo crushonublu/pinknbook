@@ -21,6 +21,13 @@ import { isLookupSize, lookupCandidates, selectionContext, sentenceAround } from
 import { FootnotePopup, isNoteRef, loadFootnote, noteContent, type FootnotePeek } from "./Footnote";
 import { WindowControls } from "./WindowControls";
 import { isAndroid } from "./platform";
+import { MobileReaderSheet } from "./mobile/MobileReaderSheet";
+import { MobileReaderThemes } from "./mobile/MobileReaderThemes";
+import { watchReaderGestures } from "./mobile/readerGestures";
+import "./mobile/reader.css";
+import { watchTouchSelection } from "./mobile/selection";
+import { useMobileDismiss } from "./mobile/back";
+import { mobileAnnotationStyle, saveMobileAnnotationStyle, mobileBaseColor, type MobileHighlightStyle } from "./mobile/annotationStyle";
 
 interface ReaderStart {
   cfi: string | null;
@@ -173,6 +180,19 @@ function marksOnPage(view: any, marks: Bookmark[], visible: Range | null): numbe
 function applyLayout(view: any, p: ReaderPrefs) {
   const r = view?.renderer;
   if (!r) return;
+  if (isAndroid) {
+    const width = view.getBoundingClientRect().width || window.innerWidth;
+    const tablet = window.matchMedia("(min-width: 900px) and (orientation: landscape)").matches;
+    const side = tablet ? 48 : p.margins === "narrow" ? 16 : p.margins === "wide" ? 32 : 24;
+    r.setAttribute("margin", "12px");
+    // Foliate splits this percentage between its outer gutter and the
+    // iframe's column padding: together they give `side` pixels per edge.
+    r.setAttribute("gap", `${100 * side / Math.max(1, width)}%`);
+    r.setAttribute("max-inline-size", `${tablet ? width / 2 : width}px`);
+    r.setAttribute("max-column-count", tablet ? "2" : "1");
+    r.toggleAttribute("animated", p.mobileMotion === "slide" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    return;
+  }
   const m = MARGIN_LAYOUT[p.margins];
   r.setAttribute("margin", `${m.margin}px`);
   r.setAttribute("gap", m.gap);
@@ -219,6 +239,7 @@ export default function Reader({
   const saveTimer = useRef<number | null>(null);
   const lastFractionRef = useRef(0);
   const curlRef = useRef<PageCurl | null>(null);
+  const selectionCleanups = useRef<(() => void)[]>([]);
 
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [errMsg, setErrMsg] = useState("");
@@ -230,12 +251,64 @@ export default function Reader({
   prefsRef.current = prefs;
   const setPref = (patch: Partial<ReaderPrefs>) => setPrefs((p) => ({ ...p, ...patch }));
   const [showSettings, setShowSettings] = useState(false);
+  const [controls, setControls] = useState(false);
+  const [mobileMenu, setMobileMenu] = useState(false);
+  const [appearance, setAppearance] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"customize" | "tools">("customize");
+  const [undoJump, setUndoJump] = useState<{ cfi: string; fraction: number } | null>(null);
+  const androidTurning = useRef(false);
+  const [mobileChapterMinutes, setMobileChapterMinutes] = useState<number | null>(null);
   const [chapter, setChapter] = useState<string | null>(null);
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocHref, setTocHref] = useState<string | null>(null);
   const [sidebar, setSidebar] = useState<SidebarTab | null>(null);
   const sidebarRef = useRef(sidebar);
   sidebarRef.current = sidebar;
+
+  useEffect(() => {
+    if (!isAndroid) return;
+    const dismiss = () => {
+      // Let App and the existing overlay handlers dismiss annotations first.
+      if (document.querySelector(".dict, .hlbar, .hlnote, .fnote, .mc-footnote, .xrg, .reader__modal")) return false;
+      if (showSettings) { setShowSettings(false); setAppearance(true); }
+      else if (appearance) setAppearance(false);
+      else if (sidebar) setSidebar(null);
+      else if (mobileMenu) setMobileMenu(false);
+      else if (controls) setControls(false);
+      else return false;
+      return true;
+    };
+    const back = (e: Event) => {
+      if (document.querySelector(".dict, .hlbar, .hlnote, .fnote, .mc-footnote")) return;
+      if (dismiss()) e.preventDefault();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && dismiss()) { e.preventDefault(); e.stopImmediatePropagation(); }
+    };
+    window.addEventListener("mobile-dismiss", back);
+    window.addEventListener("keydown", key, true);
+    return () => { window.removeEventListener("mobile-dismiss", back); window.removeEventListener("keydown", key, true); };
+  }, [controls, mobileMenu, appearance, showSettings, sidebar]);
+
+  useEffect(() => {
+    if (!isAndroid) return;
+    const native = (window as Window & {
+      PntomeReader?: { setGestureExclusion(enabled: boolean): void };
+    }).PntomeReader;
+    const resize = () => {
+      applyLayout(viewRef.current, prefsRef.current);
+      native?.setGestureExclusion(true);
+    };
+    native?.setGestureExclusion(true);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    window.addEventListener("resize", resize);
+    reduced.addEventListener("change", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      reduced.removeEventListener("change", resize);
+      native?.setGestureExclusion(false);
+    };
+  }, []);
 
   // ---- X-Ray --------------------------------------------------------------
   const [xrSel, setXrSel] = useState<string | null>(null);
@@ -341,6 +414,7 @@ export default function Reader({
   function pickHit(i: number) {
     const hit = searchRef.current.hits[i];
     if (!hit) return;
+    if (isAndroid) { setSidebar(null); setControls(false); }
     setSearch((s) => ({ ...s, current: i }));
     viewRef.current?.goTo(hit.cfi)?.catch?.(() => undefined);
   }
@@ -367,6 +441,15 @@ export default function Reader({
   // Hovering a footnote mark shows the note's text; it stays open while the
   // pointer is on the mark or on the box.
   const [peek, setPeek] = useState<FootnotePeek | null>(null);
+  const clearSelection = () => {
+    for (const content of viewRef.current?.renderer?.getContents?.() ?? []) content.doc.getSelection()?.removeAllRanges();
+    setSel(null);
+  };
+  useMobileDismiss(isAndroid && !!(sel || active || noteEdit || peek), () => {
+    if (noteEdit) setNoteEdit(null);
+    else if (sel || active) { setActive(null); clearSelection(); }
+    else closePeek();
+  });
   /** What the peek is for: a footnote link, or a highlight's id. */
   const peekLink = useRef<unknown>(null);
   const peekTimer = useRef<number | null>(null);
@@ -402,7 +485,7 @@ export default function Reader({
       r.selectNodeContents(a);
       const rect = screenRect(r);
       if (rect) setPeek({ rect, content });
-    }, 300);
+    }, isAndroid ? 0 : 300);
   };
   /** The pointer is over a highlight: show its note, if it has one. */
   const overHighlight = (doc: Document, x: number, y: number) => {
@@ -501,6 +584,19 @@ export default function Reader({
   // One-time open of the book.
   useEffect(() => {
     let cancelled = false;
+    // Section document events stop at their Window, never bubbling through the
+    // iframe element. This listener owns only the surrounding page margins.
+    const stopHostGestures = isAndroid && hostRef.current
+      ? watchReaderGestures(hostRef.current, {
+        ...androidGestureOptions(),
+        point: (x, y) => ({ x, y }),
+        selected: () => [document, ...(viewRef.current?.renderer?.getContents?.() ?? []).map((c: { doc: Document }) => c.doc)]
+          .some((doc: Document) => { const s = doc.getSelection(); return !!s && !s.isCollapsed; }),
+        selectionTarget: document,
+        // Also leave events targeted at the iframe element itself alone,
+        // including when foliate's shadow roots retarget them to foliate-view.
+        accept: (e) => !e.composedPath().some((node) => (node as Element).localName === "iframe"),
+      }) : undefined;
 
     (async () => {
       try {
@@ -536,7 +632,8 @@ export default function Reader({
             return;
           }
           draw(drawHighlight, {
-            color: COLOR_HEX[annotation.color as HighlightColor] ?? COLOR_HEX.yellow,
+            color: isAndroid && annotation.mobileStyle === "green" ? "#7ed18c" : COLOR_HEX[annotation.color as HighlightColor] ?? COLOR_HEX.yellow,
+            underline: isAndroid && annotation.mobileStyle === "underline",
             note: !!annotation.note,
             dark: THEMES[resolveTheme(prefsRef.current, theme)].dark,
           });
@@ -550,7 +647,8 @@ export default function Reader({
           const ann = annRef.current.find((a) => a.cfi === e.detail.value);
           const rect = e.detail.range ? screenRect(e.detail.range) : null;
           if (ann && rect) {
-            setSel(null);
+            if (isAndroid) { closePeek(); clearSelection(); setControls(false); setMobileMenu(false); }
+            else setSel(null);
             setActive({ ann, rect });
           }
         });
@@ -562,11 +660,13 @@ export default function Reader({
         void buildTocStarts(view);
 
         view.renderer.setAttribute("flow", "paginated");
+        if (isAndroid) view.renderer.setAttribute("no-selection-turn", "");
         applyLayout(view, prefsRef.current);
         view.renderer.setStyles?.(contentCSS(prefsRef.current, theme));
 
         view.addEventListener("relocate", (e: CustomEvent) => {
           const d = e.detail ?? {};
+          if (isAndroid && typeof d.time?.section === "number") setMobileChapterMinutes(Math.max(0, Math.ceil(d.time.section)));
           closePeek();
           if (typeof d.fraction === "number") {
             setFraction(d.fraction);
@@ -608,11 +708,12 @@ export default function Reader({
           await jumpToAmazon(view, start.amazon_fraction);
         }
 
-        if (!cancelled && hostRef.current) {
+        if (!isAndroid && !cancelled && hostRef.current) {
           const curl = new PageCurl(hostRef.current, view);
           curl.enabled = prefsRef.current.curl;
           curlRef.current = curl;
         }
+        if (isAndroid && !cancelled) syncAndroidCurl();
         if (!cancelled) setStatus("ready");
         if (!cancelled) {
           await loadAnnotations();
@@ -630,6 +731,7 @@ export default function Reader({
 
     return () => {
       cancelled = true;
+      stopHostGestures?.();
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
       // Push the last reading position up to Amazon so other devices can sync.
       // Fire-and-forget: the component is unmounting.
@@ -644,6 +746,8 @@ export default function Reader({
       if (prefsRef.current.kindleSync && !local) {
         invoke("kindle_push_annotations", { asin: row.asin, cdeType: row.cde_type }).catch(() => undefined);
       }
+      for (const cleanup of selectionCleanups.current) cleanup();
+      selectionCleanups.current = [];
       curlRef.current?.destroy();
       curlRef.current = null;
       try {
@@ -657,6 +761,21 @@ export default function Reader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function syncAndroidCurl() {
+    if (!isAndroid) return;
+    const want = (prefsRef.current.mobileMotion ?? "curl") === "curl";
+    if (!want) { curlRef.current?.destroy(); curlRef.current = null; }
+    else if (!curlRef.current && hostRef.current && viewRef.current?.renderer) {
+      curlRef.current = new PageCurl(hostRef.current, viewRef.current, {
+        zones: false, readyOnly: true,
+        navigate: async (dir) => {
+          const v = viewRef.current;
+          await (dir < 0 ? v?.goLeft?.() : v?.goRight?.());
+        },
+      });
+    }
+  }
+
   // Re-apply styles and layout whenever a preference (or the app theme) changes.
   useEffect(() => {
     const view = viewRef.current;
@@ -664,7 +783,8 @@ export default function Reader({
       applyLayout(view, prefs);
       view.renderer.setStyles?.(contentCSS(prefs, theme));
     }
-    if (curlRef.current) curlRef.current.enabled = prefs.curl;
+    if (isAndroid) syncAndroidCurl();
+    else if (curlRef.current) curlRef.current.enabled = prefs.curl;
     curlRef.current?.invalidate();
     savePrefs(prefs);
     drawAll();
@@ -673,24 +793,60 @@ export default function Reader({
 
   // ---- Highlights and notes -------------------------------------------------
 
+  function androidGestureOptions() {
+    return {
+      bounds: () => hostRef.current!.getBoundingClientRect(),
+      turn: (dir: -1 | 1) => { if (dir < 0) turnLeft(); else turnRight(); },
+      drag: () => curlRef.current,
+      busy: () => !!curlRef.current?.running,
+      onDrag: () => { setControls(false); setMobileMenu(false); },
+      toggle: () => { setControls((v) => !v); setMobileMenu(false); },
+    };
+  }
+
   /** Notice text selections in a section as it loads. */
   function watchSelection(doc: Document, index: number) {
-    const check = () => {
+    if (isAndroid) {
+      selectionCleanups.current.push(watchTouchSelection(doc, check));
+      selectionCleanups.current.push(watchReaderGestures(doc, {
+        ...androidGestureOptions(),
+        point: (x, y) => {
+          const frame = doc.defaultView?.frameElement?.getBoundingClientRect();
+          return { x: x + (frame?.left ?? 0), y: y + (frame?.top ?? 0) };
+        },
+        selected: () => { const s = doc.getSelection(); return !!s && !s.isCollapsed; },
+        hitHighlight: (x, y) => {
+          const content = viewRef.current?.renderer?.getContents?.()?.find((c: { doc: Document }) => c.doc === doc);
+          return !!content?.overlayer?.hitTest?.({ x, y })?.[0];
+        },
+      }));
+    }
+    function check() {
       const s = doc.getSelection();
       if (!s || s.isCollapsed || !s.rangeCount) return;
       const range = s.getRangeAt(0).cloneRange();
       if (!range.toString().trim()) return;
       const rect = screenRect(range);
       if (!rect) return;
+      if (isAndroid) { closePeek(); setControls(false); setMobileMenu(false); }
       setActive(null);
       setSel({ range, index, doc, rect, dict: dictRequest(range, index, doc, rect) });
-    };
-    doc.addEventListener("pointerup", () => window.setTimeout(check, 0));
+    }
+    if (!isAndroid) doc.addEventListener("pointerup", () => window.setTimeout(check, 0));
+    if (isAndroid) doc.addEventListener("click", (e) => {
+      const a = (e.target as Element | null)?.closest?.("a[href]");
+      if (a && isNoteRef(a)) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        clearSelection(); setActive(null); enterLink(a, index);
+      }
+    }, true);
     doc.addEventListener("pointerover", (e) => {
+      if (isAndroid) return;
       const a = (e.target as Element | null)?.closest?.("a[href]");
       if (a && isNoteRef(a)) enterLink(a, index);
     });
     doc.addEventListener("pointerout", (e) => {
+      if (isAndroid) return;
       const a = (e.target as Element | null)?.closest?.("a[href]");
       if (a && !a.contains(e.relatedTarget as Node | null)) leaveLink(a);
     });
@@ -704,6 +860,7 @@ export default function Reader({
     });
     let moveFrame = 0;
     doc.addEventListener("pointermove", (e) => {
+      if (isAndroid) return;
       if (e.buttons) return;
       cancelAnimationFrame(moveFrame);
       moveFrame = requestAnimationFrame(() => {
@@ -762,7 +919,7 @@ export default function Reader({
 
   /** A dictionary request for a short selection (when lookups are on). */
   function dictRequest(range: Range, index: number, doc: Document, rect: DOMRect): DictRequest | undefined {
-    if (!prefsRef.current.dict || !isLookupSize(range.toString())) return undefined;
+    if (!prefsRef.current.dict || (isAndroid && /\s/u.test(range.toString().trim())) || !isLookupSize(range.toString())) return undefined;
     const ctx = selectionContext(range);
     if (!ctx) return undefined;
     const candidates = lookupCandidates(ctx);
@@ -788,7 +945,7 @@ export default function Reader({
   }
 
   function drawOne(a: Annotation) {
-    viewRef.current?.addAnnotation?.({ value: a.cfi, color: a.color, note: a.note })?.catch?.(() => undefined);
+    viewRef.current?.addAnnotation?.({ value: a.cfi, color: a.color, note: a.note, ...(isAndroid ? { mobileStyle: mobileAnnotationStyle(a) } : {}) })?.catch?.(() => undefined);
   }
   function drawAll() {
     for (const a of annRef.current) drawOne(a);
@@ -917,7 +1074,8 @@ export default function Reader({
     }
   }
 
-  async function highlightSelection(color: HighlightColor, thenNote = false) {
+  async function highlightSelection(style: MobileHighlightStyle, thenNote = false) {
+    const color = mobileBaseColor(style);
     const s = selRef.current;
     const view = viewRef.current;
     if (!s || !view) return;
@@ -935,6 +1093,7 @@ export default function Reader({
         chapter: locRef.current?.chapter ?? null,
         fromKindle: false,
       });
+      if (isAndroid) saveMobileAnnotationStyle(a, style);
       s.doc.getSelection()?.removeAllRanges();
       setSel(null);
       const list = [...annRef.current, a].sort((x, y) => x.fraction - y.fraction || x.id - y.id);
@@ -948,13 +1107,14 @@ export default function Reader({
     }
   }
 
-  async function updateAnnotation(a: Annotation, patch: { color?: HighlightColor; note?: string }) {
+  async function updateAnnotation(a: Annotation, patch: { color?: MobileHighlightStyle; note?: string }) {
     try {
       const u = await invoke<Annotation>("update_annotation", {
         id: a.id,
-        color: patch.color ?? null,
+        color: patch.color ? mobileBaseColor(patch.color) : null,
         note: patch.note ?? null,
       });
+      if (isAndroid && patch.color) saveMobileAnnotationStyle(u, patch.color);
       const list = annRef.current.map((x) => (x.id === u.id ? u : x));
       annRef.current = list;
       setAnnotations(list);
@@ -971,6 +1131,7 @@ export default function Reader({
     const a = annRef.current.find((x) => x.id === id);
     if (!a) return;
     await invoke("remove_annotation", { id }).catch(() => undefined);
+    if (isAndroid) saveMobileAnnotationStyle(a);
     viewRef.current?.deleteAnnotation?.({ value: a.cfi });
     const list = annRef.current.filter((x) => x.id !== id);
     annRef.current = list;
@@ -1026,6 +1187,7 @@ export default function Reader({
     setBookmarks((b) => b.filter((x) => x.id !== id));
   }
   async function goTo(target: string) {
+    if (isAndroid) setControls(false);
     setSidebar(null);
     try {
       await viewRef.current?.goTo(target);
@@ -1091,6 +1253,7 @@ export default function Reader({
       else if (e.key === "ArrowRight" || e.key === "PageDown") turnRight();
       // Escape closes the book only when no overlay (map, dictionary…) is up.
       else if (e.key === "Escape") {
+        if (isAndroid) return;
         if (!document.querySelector(".xrg, .dict, .hlnote, .rside")) onClose();
       }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
@@ -1106,13 +1269,31 @@ export default function Reader({
 
   // Page turns go through the curl (it falls back to a plain turn by itself
   // when it cannot animate, e.g. right-to-left books or scrolled flow).
+  async function androidTurn(dir: -1 | 1) {
+    const v = viewRef.current;
+    if (!v) return;
+    if (curlRef.current) {
+      setControls(false); setMobileMenu(false);
+      curlRef.current.turn(dir);
+      return;
+    }
+    if (androidTurning.current) return;
+    androidTurning.current = true;
+    setControls(false);
+    setMobileMenu(false);
+    try { await (dir < 0 ? v.goLeft?.() : v.goRight?.()); }
+    catch (e) { console.warn("[android page turn]", e); }
+    finally { androidTurning.current = false; }
+  }
   function turnLeft() {
+    if (isAndroid) { void androidTurn(-1); return; }
     const v = viewRef.current;
     if (!v) return;
     if (curlRef.current && v.book?.dir !== "rtl") curlRef.current.turn(-1);
     else v.goLeft?.();
   }
   function turnRight() {
+    if (isAndroid) { void androidTurn(1); return; }
     const v = viewRef.current;
     if (!v) return;
     if (curlRef.current && v.book?.dir !== "rtl") curlRef.current.turn(1);
@@ -1215,7 +1396,53 @@ export default function Reader({
         colorScheme: palette.dark ? "dark" : "light",
       }}
     >
-      <header className="reader__bar" data-tauri-drag-region>
+      {isAndroid && <>
+        <div className="mr-running-title">{row.title || row.asin}</div>
+        <div className="mr-running-foot"><span>{chapter ?? t.mrChapter}{(chapterLeft ?? mobileChapterMinutes) != null ? ` · ${t.mrMinutes.replace("{0}", String(chapterLeft ?? mobileChapterMinutes))}` : ""}</span><span>{pct}%</span></div>
+        {(controls || status === "error") && <>
+          <header className="mr-top">
+            <button onClick={onClose} aria-label={t.closeReader}><Icon name="close" size={20} /></button>
+            <div><strong>{row.title || row.asin}</strong><span>{chapter}</span></div>
+            <button onClick={toggleBookmark} disabled={status !== "ready"} aria-label={pageMarks.length ? t.removeBookmark : t.addBookmark} aria-pressed={pageMarks.length > 0}>
+              <Icon name={pageMarks.length ? "bookmarkOn" : "bookmark"} size={21} />
+            </button>
+          </header>
+          <footer className="mr-bottom">
+            <div className="mr-bottom__row">
+              <ScrubBar fraction={fraction} disabled={status !== "ready"} label={t.seekTo} loadingLabel={t.previewLoading}
+                marks={scrubMarks} file={bookFile} styles={contentCSS({ ...prefs, size: Math.round(prefs.size * PREVIEW_SCALE) }, theme)} formatPos={fmtPos}
+                onSeek={(f) => {
+                  if (locRef.current) setUndoJump({ cfi: locRef.current.cfi, fraction: locRef.current.fraction });
+                  void viewRef.current?.goToFraction(f);
+                }} />
+              <button className="mr-menu-toggle" aria-label={t.mrMenu} aria-expanded={mobileMenu} onClick={() => setMobileMenu((v) => !v)}><Icon name="hamburger" size={16} /></button>
+            </div>
+            <div className="mr-bottom__position"><span>{pct}%</span>{undoJump && <button onClick={() => {
+              void viewRef.current?.goTo(undoJump.cfi);
+              setUndoJump(null);
+            }}>{t.mrBackTo.replace("{0}", `${Math.round(undoJump.fraction * 100)}%`)}</button>}</div>
+          </footer>
+          {mobileMenu && <>
+            <div className="mr-menu-scrim" onClick={() => setMobileMenu(false)} />
+            <nav className="mr-menu" aria-label={t.mrMenu}>
+              <button onClick={() => { setMobileMenu(false); setSidebar("toc"); }}><Icon name="toc" size={18} />{t.mrContents}</button>
+              <button onClick={() => { setMobileMenu(false); setSidebar("search"); }}><Icon name="search" size={18} />{t.bsTab}</button>
+              {prefs.xray && <button onClick={() => { setMobileMenu(false); setSidebar("xray"); }}><Icon name="xray" size={18} />{t.xrTab}</button>}
+              <button onClick={() => { setMobileMenu(false); setSidebar("words"); }}><Icon name="vocab" size={18} />{t.mrWords}</button>
+              <button onClick={() => { setMobileMenu(false); setAppearance(true); }}><span className="mr-menu__aa">Aa</span>{t.mrThemes}</button>
+            </nav>
+          </>}
+        </>}
+        {(appearance || showSettings) && <MobileReaderSheet title={showSettings ? settingsSection === "tools" ? t.mrTools : t.mrCustomize : t.mrThemes} closeLabel={t.closeReader}
+          onClose={() => { if (showSettings) { setShowSettings(false); setAppearance(true); } else setAppearance(false); }}>
+          {showSettings ? <ReaderSettings prefs={prefs} set={setPref} lang={lang} appTheme={theme} kindle={false} mobileSection={settingsSection}
+            onClose={() => { setShowSettings(false); setAppearance(true); }} />
+            : <MobileReaderThemes prefs={prefs} set={setPref} lang={lang}
+              onCustomize={() => { setAppearance(false); setSettingsSection("customize"); setShowSettings(true); }}
+              onTools={() => { setAppearance(false); setSettingsSection("tools"); setShowSettings(true); }} />}
+        </MobileReaderSheet>}
+      </>}
+      {!isAndroid && <header className="reader__bar" data-tauri-drag-region>
         <button className="reader__back" onClick={onClose} title={t.closeReader}>
           <Icon name="arrowL" size={17} />
           <span>{t.backToLibrary}</span>
@@ -1290,9 +1517,9 @@ export default function Reader({
             kindle={!local}
           />
         )}
-      </header>
+      </header>}
 
-      <div className={`reader__stage${sidebar === "search" || sidebar === "xray" ? " reader__stage--dock" : ""}`}>
+      <div className={`reader__stage${!isAndroid && (sidebar === "search" || sidebar === "xray") ? " reader__stage--dock" : ""}`}>
         {pageMarks.length > 0 && <div className="reader__ribbon" aria-hidden="true" />}
         {sidebar && (
           <ReaderSidebar
@@ -1317,7 +1544,7 @@ export default function Reader({
             kindleCapable={kindleCapable}
             local={local}
             wordsPanel={
-              prefs.dict || words.length ? (
+              isAndroid || prefs.dict || words.length ? (
                 <WordsPanel
                   lang={lang}
                   words={words}
@@ -1337,7 +1564,7 @@ export default function Reader({
                   onSelect={setXrSel}
                   onOpenGraph={() => setXrGraph(true)}
                   formatPos={fmtPos}
-                  onGo={(m) => goToMention(viewRef.current, m)}
+                  onGo={(m) => { if (isAndroid) { setSidebar(null); setControls(false); } goToMention(viewRef.current, m); }}
                 />
               ) : undefined
             }
@@ -1381,7 +1608,7 @@ export default function Reader({
         </button>
       </div>
 
-      <footer className="reader__foot">
+      {!isAndroid && <footer className="reader__foot">
         <span className="reader__chapter" title={chapter ?? undefined}>
           {chapter ?? ""}
           {chapterLeft != null && status === "ready" && (
@@ -1414,7 +1641,7 @@ export default function Reader({
           )}
           {pct}%
         </span>
-      </footer>
+      </footer>}
 
       {xrGraph && prefs.xray && xr.ready && (
         <XRayGraph
@@ -1434,6 +1661,7 @@ export default function Reader({
       {peek && !sel && !active && !noteEdit && (
         <FootnotePopup
           peek={peek}
+          lang={lang}
           font={FONT_STACKS[prefs.font] ?? FONT_STACKS.book ?? "serif"}
           onEnter={() => clearTimer(hideTimer)}
           onLeave={hidePeekSoon}
@@ -1445,15 +1673,19 @@ export default function Reader({
           key={sel.dict.candidates.join("|")}
           lang={lang}
           req={sel.dict}
-          onClose={() => setSel((s) => (s ? { ...s, dict: undefined } : s))}
+          onClose={() => isAndroid ? clearSelection() : setSel((s) => (s ? { ...s, dict: undefined } : s))}
+          onHighlight={(style) => highlightSelection(style)}
+          onNote={() => highlightSelection("yellow", true)}
+          onCopy={() => { copyText(sel.range.toString()); clearSelection(); }}
           onSaved={() => loadWords()}
         />
       )}
-      {sel && !noteEdit && (
+      {sel && !noteEdit && (!isAndroid || !sel.dict) && (
         <HighlightBar
           lang={lang}
           anchor={sel.rect}
           onColor={(c) => highlightSelection(c)}
+          onMobileColor={(c) => highlightSelection(c)}
           onNote={() => highlightSelection("yellow", true)}
           onCopy={() => {
             copyText(sel.range.toString());
@@ -1471,6 +1703,8 @@ export default function Reader({
           lang={lang}
           anchor={active.rect}
           current={active.ann.color}
+          mobileCurrent={isAndroid ? mobileAnnotationStyle(active.ann) : undefined}
+          onMobileColor={async (c) => { await updateAnnotation(active.ann, { color: c }); setActive(null); }}
           hasNote={!!active.ann.note}
           onColor={(c) => {
             updateAnnotation(active.ann, { color: c });

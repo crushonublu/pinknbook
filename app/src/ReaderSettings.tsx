@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { isAndroid } from "./platform";
+import { Icon } from "./icons";
 import { STR, type Lang } from "./i18n";
 import {
   FONT_STACKS,
@@ -22,6 +24,7 @@ export function ReaderSettings({
   appTheme,
   onClose,
   kindle = true,
+  mobileSection = "customize",
 }: {
   prefs: ReaderPrefs;
   set: (patch: Partial<ReaderPrefs>) => void;
@@ -30,6 +33,7 @@ export function ReaderSettings({
   onClose: () => void;
   /** The book can sync with Kindle (false for books added from this computer). */
   kindle?: boolean;
+  mobileSection?: "customize" | "tools";
 }) {
   const t = STR[lang];
   const ref = useRef<HTMLDivElement>(null);
@@ -38,6 +42,7 @@ export function ReaderSettings({
   useEffect(() => {
     const down = (e: PointerEvent) => {
       const target = e.target as Element | null;
+      if (isAndroid) return;
       if (ref.current && !ref.current.contains(target) && !target?.closest("[data-settings-toggle]")) onClose();
     };
     const key = (e: KeyboardEvent) => {
@@ -70,8 +75,8 @@ export function ReaderSettings({
   ];
 
   return (
-    <div className="rset" ref={ref} role="dialog" aria-label={t.readingSettings}>
-      <Section title={t.rsTheme}>
+    <div className="rset" ref={ref} role={isAndroid ? undefined : "dialog"} aria-label={t.readingSettings}>
+      {(!isAndroid) && <Section title={t.rsTheme}>
         <div className="rset__themes" role="radiogroup" aria-label={t.rsTheme}>
           {themes.map(([id, label]) => {
             const th = THEMES[id === "auto" ? (appTheme === "dark" ? "dusk" : "paper") : id];
@@ -90,11 +95,12 @@ export function ReaderSettings({
             );
           })}
         </div>
-      </Section>
+      </Section>}
 
+      {(!isAndroid || mobileSection === "customize") && <>
       <Section title={t.rsFont}>
         <div className="rset__fonts" role="radiogroup" aria-label={t.rsFont}>
-          {fonts.map(([id, label]) => (
+          {fonts.filter(([id]) => !isAndroid || id !== "sans").map(([id, label]) => (
             <button
               key={id}
               role="radio"
@@ -164,7 +170,7 @@ export function ReaderSettings({
         </Section>
       </div>
 
-      <Section title={t.rsLayout}>
+      {!isAndroid && <Section title={t.rsLayout}>
         <Seg<"spread" | "single">
           value={prefs.spread ? "spread" : "single"}
           onChange={(v) => set({ spread: v === "spread" })}
@@ -173,17 +179,20 @@ export function ReaderSettings({
             ["single", <span key="o">{t.rsSingle}</span>, t.rsSingle],
           ]}
         />
-      </Section>
+      </Section>}
 
+      </>}
       <div className="rset__toggles">
-        <Toggle label={t.rsJustify} on={prefs.justify} onChange={(justify) => set({ justify })} />
-        <Toggle label={t.pageCurlShort} on={prefs.curl} onChange={(curl) => set({ curl })} />
-        {kindle && <Toggle label={t.rsKindleSync} on={prefs.kindleSync} onChange={(kindleSync) => set({ kindleSync })} />}
+        {(!isAndroid || mobileSection === "customize") && <Toggle label={t.rsJustify} on={prefs.justify} onChange={(justify) => set({ justify })} />}
+        {!isAndroid && <Toggle label={t.pageCurlShort} on={prefs.curl} onChange={(curl) => set({ curl })} />}
+        {!isAndroid && kindle && <Toggle label={t.rsKindleSync} on={prefs.kindleSync} onChange={(kindleSync) => set({ kindleSync })} />}
+        {(!isAndroid || mobileSection === "tools") && <>
         <Toggle label={t.rsDict} on={prefs.dict} onChange={(dict) => set({ dict })} />
         <Toggle label={t.rsXray} on={prefs.xray} onChange={(xray) => set({ xray })} />
+        </>}
       </div>
-      {prefs.xray && <AiSettings lang={lang} provider={prefs.aiProvider} setProvider={(aiProvider) => set({ aiProvider })} />}
-      {kindle && <p className="rset__hint">{t.rsKindleSyncHint}</p>}
+      {(!isAndroid || mobileSection === "tools") && prefs.xray && <AiSettings lang={lang} provider={prefs.aiProvider} setProvider={(aiProvider) => set({ aiProvider })} />}
+      {!isAndroid && kindle && <p className="rset__hint">{t.rsKindleSyncHint}</p>}
     </div>
   );
 }
@@ -226,7 +235,7 @@ function Seg<V extends string>({
 }
 
 /** Which AI labels X-Ray relationships, and its API key. */
-function AiSettings({
+export function AiSettings({
   lang,
   provider,
   setProvider,
@@ -288,7 +297,7 @@ function AiSettings({
           </button>
         </div>
       )}
-      <p className="rset__hint">{err ? t.rsKeyBad : t.rsAiHint}</p>
+      <p className="rset__hint">{err ? t.rsKeyBad : isAndroid ? t.mrAiHint : t.rsAiHint}</p>
     </section>
   );
 }
@@ -305,6 +314,7 @@ function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange:
 
 /** Tiny icons: three text lines with a given leading / a page with margins. */
 function Lines({ gap }: { gap: number }) {
+  if (isAndroid) return <Icon name="text" size={22} />;
   return (
     <svg width="22" height="18" viewBox="0 0 22 18" aria-hidden="true">
       {[0, 1, 2].map((i) => (
@@ -314,6 +324,7 @@ function Lines({ gap }: { gap: number }) {
   );
 }
 function Page({ inset }: { inset: number }) {
+  if (isAndroid) return <Icon name="pages" size={22} />;
   return (
     <svg width="22" height="18" viewBox="0 0 22 18" aria-hidden="true">
       <rect x="1.5" y="1.5" width="19" height="15" rx="2" fill="none" stroke="currentColor" strokeWidth="1.2" opacity=".5" />

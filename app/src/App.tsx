@@ -37,6 +37,13 @@ import { BadgeToasts, StatsPage, StreakButton, useStats } from "./Stats";
 import { VocabPage } from "./Vocab";
 import { UpdateBanner, useUpdater } from "./Updater";
 import "./App.css";
+import { MobileHome, MobileLibrary, MobileTabs, type MobileTab, type MobileSource } from "./mobile/MobileShell";
+import MobileBookSheet from "./mobile/MobileBookSheet";
+import MobileAccount from "./mobile/MobileAccount";
+import { useAndroidBack } from "./mobile/back";
+import "./mobile/mobile.css";
+
+const DetailComponent = isAndroid ? MobileBookSheet : BookDetail;
 
 function useStored<T extends string>(key: string, initial: T): [T, (v: T) => void] {
   const [v, setV] = useState<T>(() => {
@@ -111,6 +118,51 @@ export default function App() {
   const [onlyMatches, setOnlyMatches] = useState(false);
   /** A local book waiting for "remove from library?" to be confirmed. */
   const [removing, setRemoving] = useState<LibraryRow | null>(null);
+  const [mobileTab, setMobileTab] = useState<MobileTab>("home");
+  const [mobileSource, setMobileSource] = useState<MobileSource>("all");
+  const [searchFocus, setSearchFocus] = useState(0);
+
+  useAndroidBack(() => {
+    if (removing) { setRemoving(null); return true; }
+    if (kindlePush) { setKindlePush(null); return true; }
+    if (askLogout) { setAskLogout(false); return true; }
+    if (showLocalLib) {
+      // Respect a disabled close button during a library restore/export.
+      document.querySelector<HTMLButtonElement>(".locallib__x:not(:disabled)")?.click();
+      return true;
+    }
+    if (showSend) { setShowSend(false); return true; }
+    if (editing) {
+      document.querySelector<HTMLButtonElement>('.editor__actions button[type="button"]:last-of-type:not(:disabled)')?.click();
+      return true;
+    }
+    // The Goodreads picker is nested inside the book sheet.
+    const pickerCancel = document.querySelector<HTMLButtonElement>(".gr__pickactions button:last-child");
+    if (pickerCancel) { pickerCancel.click(); return true; }
+    if (reading) {
+      const overlay = document.querySelector<HTMLElement>(".reader__modal");
+      if (overlay) { overlay.click(); return true; }
+      // Use each overlay's own close action, avoiding Escape reaching two layers.
+      for (const selector of [".hlnote__actions .btn:not(.btn--primary)", ".dict__tools button:last-child", ".xrg__aipop .dict__actions .btn:not(.btn--primary)", ".xrg__phead .reader__tool", ".xrg__tools > .reader__tool"]) {
+        const close = document.querySelector<HTMLButtonElement>(selector);
+        if (close) { close.click(); return true; }
+      }
+    }
+    // Reader overlays already handle Escape. Do not close the reader as well.
+    if (reading && document.querySelector(".rset, .rside, .dict, .xrg, .hlnote")) {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      return true;
+    }
+    if (detailAsin) { setDetailAsin(null); return true; }
+    if (showStats) { setShowStats(false); return true; }
+    if (reading) { setReading(null); setReadAt(null); void refreshLibrary(); stats.refresh(); return true; }
+    if (mobileTab !== "home") { setSearchFocus(0); setMobileTab("home"); return true; }
+    return false;
+  }, setError);
+
+  useEffect(() => {
+    if (isAndroid) document.querySelector(".app__body")?.scrollTo({ top: 0 });
+  }, [mobileTab, showStats]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -353,11 +405,15 @@ export default function App() {
     return (["EBOK", "PDOC", "LOCAL"] as const).filter((k) => present.has(k));
   }, [visible]);
   const activeFilter: TypeFilter = kinds.length > 1 && (kinds as string[]).includes(filter) ? filter : "all";
+  const mixedSources = visible.some((r) => r.source === "local") && visible.some((r) => r.source === "amazon");
+  const activeMobileSource = mixedSources ? mobileSource : "all";
 
   const shown = useMemo(() => {
     let rows = visible;
-    if (onlyMatches) rows = rows.filter((r) => r.kindle_match);
-    if (activeFilter !== "all") rows = rows.filter((r) => bookKind(r) === activeFilter);
+    if (!isAndroid && onlyMatches) rows = rows.filter((r) => r.kindle_match);
+    if (isAndroid) {
+      if (activeMobileSource !== "all") rows = rows.filter((r) => r.source === activeMobileSource);
+    } else if (activeFilter !== "all") rows = rows.filter((r) => bookKind(r) === activeFilter);
     if (statusFilter) rows = rows.filter((r) => r.status === statusFilter);
     const q = query.trim().toLowerCase();
     if (q) {
@@ -382,25 +438,30 @@ export default function App() {
         break; // recent = DB order
     }
     return sorted;
-  }, [visible, onlyMatches, activeFilter, statusFilter, query, sort]);
+  }, [visible, onlyMatches, activeFilter, statusFilter, query, sort, activeMobileSource]);
 
   const detailRow = detailAsin ? library.find((r) => r.asin === detailAsin) ?? null : null;
   const detailTwinAsin = detailRow?.source === "local" ? (detailRow.linked_asin ?? detailRow.kindle_match) : null;
   const detailTwin = detailTwinAsin ? library.find((r) => r.asin === detailTwinAsin) ?? null : null;
+  const mobileBlocked = !!(detailRow || editing || removing || kindlePush || askLogout || showLocalLib || showSend);
   // A status filter ("See all" on a shelf) is a flat collection, never shelves.
   const effectiveView: LibraryView = (statusFilter || onlyMatches) && view === "shelves" ? "grid" : view;
 
   // Opening a book or its page morphs from the cover that was clicked.
   const actions: BookActions = {
-    read: (row, from) =>
-      morph(() => {
+    read: (row, from) => {
+      const open = () => {
         setDetailAsin(null);
         setReading(row);
-      }, from),
-    details: (row, from) => morph(() => setDetailAsin(row.asin), from),
+      };
+      if (isAndroid) open();
+      else morph(open, from);
+    },
+    details: (row, from) => isAndroid ? setDetailAsin(row.asin) : morph(() => setDetailAsin(row.asin), from),
   };
 
   function closeDetail() {
+    if (isAndroid) { setDetailAsin(null); return; }
     const asin = detailAsin;
     morph(() => setDetailAsin(null), null, () => (asin ? coverOf(asin) : null));
   }
@@ -550,9 +611,9 @@ export default function App() {
       </header>
 
       {/* Everything below the title bar scrolls; the bar never moves. */}
-      <div className="app__body">
+      <div className="app__body" inert={isAndroid && (mobileBlocked || !!reading)}>
       {error && <div className="banner banner--error">{error}</div>}
-      {matchNotice != null && hasLib && (
+      {matchNotice != null && hasLib && !isAndroid && (
         <div className="banner banner--info">
           <span>{t.matchNotice.replace("{0}", String(matchNotice))}</span>
           <button
@@ -598,11 +659,40 @@ export default function App() {
         </div>
       )}
 
-      {hasLib && showVocab && !showStats && (
+      {isAndroid && hasLib && !reading && !showStats && mobileTab === "home" && (
+        <MobileHome
+          rows={visible} lang={lang} summary={stats.summary}
+          onRead={(r) => actions.read(r, null)} onDetail={(r) => actions.details(r, null)}
+          onStats={() => { setShowStats(true); stats.refresh(); }}
+          onAdd={pickBooks} adding={!!localImport.state.progress}
+          onSearch={() => { setMobileTab("library"); setSearchFocus((v) => v + 1); }}
+          onReadingBooks={() => { setSearchFocus(0); setStatusFilter("reading"); setMobileSource("all"); setQuery(""); setMobileTab("library"); }}
+        />
+      )}
+      {isAndroid && hasLib && !reading && !showStats && mobileTab === "library" && (
+        <MobileLibrary
+          rows={shown} total={visible.length} mixed={mixedSources} lang={lang}
+          query={query} setQuery={setQuery} sort={sort} setSort={setSort}
+          status={statusFilter} setStatus={setStatusFilter}
+          source={activeMobileSource} setSource={setMobileSource}
+          view={view} setView={setView} focus={searchFocus}
+          onAdd={pickBooks} adding={!!localImport.state.progress}
+          onRead={(r) => actions.read(r, null)} onDetail={(r) => actions.details(r, null)}
+        />
+      )}
+      {isAndroid && hasLib && !reading && !showStats && mobileTab === "account" && (
+        <MobileAccount
+          lang={lang} setLang={setLang} theme={theme} setTheme={setTheme}
+          goal={stats.summary?.goal_minutes ?? 10} onChanged={stats.refresh}
+          onLocalLibrary={() => setShowLocalLib(true)} deviceName={account?.device_name}
+        />
+      )}
+
+      {hasLib && (isAndroid ? mobileTab === "vocab" && !reading : showVocab) && !showStats && (
         <VocabPage
           lang={lang}
           titles={new Map(library.map((r) => [r.asin, r.title]))}
-          onBack={() => setShowVocab(false)}
+          onBack={() => isAndroid ? setMobileTab("home") : setShowVocab(false)}
           onOpen={(asin, cfi) => {
             const row = library.find((r) => r.asin === asin);
             if (!row) return;
@@ -612,11 +702,15 @@ export default function App() {
         />
       )}
 
-      {hasLib && showStats && (
+      {hasLib && showStats && !isAndroid && (
         <StatsPage lang={lang} s={stats.summary} onBack={() => setShowStats(false)} onChanged={stats.refresh} />
       )}
+      {hasLib && showStats && isAndroid && !reading && <div className="mobile-stats">
+        <header className="mobile-header"><button className="iconbtn" aria-label={t.mobileHome} onClick={() => setShowStats(false)}><Icon name="arrowL" size={22} /></button><h1>{t.stats}</h1></header>
+        <StatsPage lang={lang} s={stats.summary} onBack={() => setShowStats(false)} onChanged={stats.refresh} />
+      </div>}
 
-      {hasLib && !showStats && !showVocab && (
+      {!isAndroid && hasLib && !showStats && !showVocab && (
         <main className="library">
           <div className="libhead">
             <div className="libhead__title">
@@ -717,8 +811,10 @@ export default function App() {
 
       </div>
 
+      {isAndroid && hasLib && !reading && !showStats && <MobileTabs lang={lang} tab={mobileTab} onTab={(tab) => { setSearchFocus(0); setMobileTab(tab); }} blocked={mobileBlocked} />}
+
       {detailRow && !reading && (
-        <BookDetail
+        <DetailComponent
           key={`detail-${detailRow.asin}`}
           row={detailRow}
           lang={lang}

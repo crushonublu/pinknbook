@@ -2,5 +2,8 @@
     <!-- Base application theme. -->
     <style name="Theme.app" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- Customize your theme here. -->
+        <!-- pntome is dark by default: light status/navigation bar icons. -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">false</item>
     </style>
 </resources>

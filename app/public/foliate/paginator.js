@@ -556,7 +556,10 @@ export class Paginator extends HTMLElement {
         this.#footer = this.#root.getElementById('footer')
 
         this.#observer.observe(this.#container)
-        this.#container.addEventListener('scroll', () => this.dispatchEvent(new Event('scroll')))
+        this.#container.addEventListener('scroll', () => {
+            if (this.#restoreSelectionScroll()) return
+            this.dispatchEvent(new Event('scroll'))
+        })
         this.#container.addEventListener('scroll', debounce(() => {
             if (this.scrolled) {
                 if (this.#justAnchored) this.#justAnchored = false
@@ -584,6 +587,7 @@ export class Paginator extends HTMLElement {
             }
         })
         const checkPointerSelection = debounce((range, sel) => {
+            if (this.hasAttribute('no-selection-turn')) return
             if (!sel.rangeCount) return
             const selRange = sel.getRangeAt(0)
             const backward = selectionIsBackward(sel)
@@ -596,11 +600,18 @@ export class Paginator extends HTMLElement {
             let isPointerSelecting = false
             doc.addEventListener('pointerdown', () => isPointerSelecting = true)
             doc.addEventListener('pointerup', () => isPointerSelecting = false)
+            doc.addEventListener('pointercancel', () => {
+                if (this.hasAttribute('no-selection-turn')) isPointerSelecting = false
+            })
             let isKeyboardSelecting = false
             doc.addEventListener('keydown', () => isKeyboardSelecting = true)
             doc.addEventListener('keyup', () => isKeyboardSelecting = false)
             doc.addEventListener('selectionchange', () => {
                 if (this.scrolled) return
+                if (this.hasAttribute('no-selection-turn')) {
+                    this.#restoreSelectionScroll()
+                    return
+                }
                 const range = this.#lastVisibleRange
                 if (!range) return
                 const sel = doc.getSelection()
@@ -624,6 +635,17 @@ export class Paginator extends HTMLElement {
             this.#background.style.background = getBackground(this.#view.document)
         }
         this.#mediaQuery.addEventListener('change', this.#mediaQueryListener)
+    }
+    // overflow:hidden still allows Chromium's native selection autoscroll.
+    // Keep the committed page offset, including negative RTL offsets.
+    #restoreSelectionScroll() {
+        if (!this.hasAttribute('no-selection-turn') || this.scrolled) return false
+        const sel = this.#view?.document?.getSelection()
+        const offset = this.#scrollBounds?.[0]
+        if (!sel || sel.isCollapsed || offset == null) return false
+        if (this.#container[this.scrollProp] === offset) return false
+        this.#container[this.scrollProp] = offset
+        return true
     }
     attributeChangedCallback(name, _, value) {
         switch (name) {

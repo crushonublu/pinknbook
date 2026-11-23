@@ -22,6 +22,14 @@ function blobToDataUrl(url: string): Promise<string> {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.blob();
       })
+      .then((b) => {
+        // A missing app file (e.g. no Bookerly in /fonts) comes back as the
+        // SPA's index.html with status 200; inlined as a "font" it makes the
+        // bitmap fall back to other metrics than the live page. Keep the URL,
+        // which the SVG image cannot load, so it falls back like the page does.
+        if (b.type.startsWith("text/html")) throw new Error("not a resource");
+        return b;
+      })
       .then(
         (b) =>
           new Promise<string>((resolve, reject) => {
@@ -49,7 +57,15 @@ async function inlineCssUrls(css: string): Promise<string> {
   await Promise.all(
     [...urls].map(async (u) => map.set(u, await blobToDataUrl(u))),
   );
-  return css.replace(URL_RE, (_, _q, u: string) => `url("${map.get(u) ?? u}")`);
+  return css
+    .replace(URL_RE, (_, _q, u: string) => `url("${map.get(u) ?? u}")`)
+    // A @font-face the image cannot load (a font that is not shipped, e.g.
+    // Bookerly on Android) still upsets the SVG image's font fallback, so the
+    // bitmap breaks lines differently from the live page. Drop those rules.
+    .replace(/@font-face\s*\{[^}]*\}/g, (rule) =>
+      // Rules with a local() source (Bookerly installed in Windows) still work.
+      /url\(\s*['"]?(?:blob:|https?:)/.test(rule) && !/local\(/.test(rule) ? "" : rule,
+    );
 }
 
 const XLINK = "http://www.w3.org/1999/xlink";
@@ -151,6 +167,9 @@ export interface SnapshotGeometry {
   layoutKey: string;
 }
 
+/** Serialisations whose fonts have had time to load in an SVG image. */
+const warmed = new Set<string>();
+
 /** Render paginator page `g.page` of `doc` into a new canvas (size × height). */
 export async function snapshotPage(
   doc: Document,
@@ -165,9 +184,23 @@ export async function snapshotPage(
     `</foreignObject></svg>`;
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
   try {
-    const img = new Image();
+    let img = new Image();
     img.src = url;
     await img.decode();
+    // The first SVG image to use the inlined web fonts can decode before the
+    // fonts have (Android WebView), and then renders in a fallback face that
+    // breaks lines differently from the live page. Give the fonts a moment
+    // and decode a fresh image once per serialisation.
+    // Keyed by a short fingerprint: serialisations carry megabytes of fonts.
+    const warmKey = `${html.length}:${html.slice(-400)}`;
+    if (!warmed.has(warmKey)) {
+      if (warmed.size > 50) warmed.clear();
+      warmed.add(warmKey);
+      await new Promise((r) => setTimeout(r, 350));
+      img = new Image();
+      img.src = url;
+      await img.decode();
+    }
     const c = document.createElement("canvas");
     c.width = Math.round(g.size * g.dpr);
     c.height = Math.round(g.height * g.dpr);

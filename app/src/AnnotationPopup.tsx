@@ -2,10 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { STR, type Lang } from "./i18n";
 import { COLOR_HEX, HIGHLIGHT_COLORS, type HighlightColor } from "./annotate";
 import { Icon } from "./icons";
+import { isAndroid } from "./platform";
+import type { MobileHighlightStyle } from "./mobile/annotationStyle";
 
 /** Keep a floating box on screen: above the anchor, else below it. */
 /** `extra`: anything else that changes the box size (re-measure when it changes). */
-export function usePlace(anchor: DOMRect, gap = 10, extra?: unknown) {
+export function usePlace(anchor: DOMRect, gap = 10, extra?: unknown, belowGap = gap, keepOnScreen = false) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number; below: boolean } | null>(null);
   useLayoutEffect(() => {
@@ -18,9 +20,11 @@ export function usePlace(anchor: DOMRect, gap = 10, extra?: unknown) {
     let left = anchor.left + anchor.width / 2 - w / 2;
     left = Math.max(8, Math.min(vw - w - 8, left));
     const above = anchor.top - h - gap;
-    const below = anchor.bottom + gap;
+    const below = anchor.bottom + belowGap;
     const useBelow = above < 56 && below + h < vh - 8;
-    setPos({ left, top: useBelow ? below : Math.max(56, above), below: useBelow });
+    const preferredTop = useBelow ? below : Math.max(56, above);
+    const top = keepOnScreen ? Math.max(8, Math.min(vh - h - 8, preferredTop)) : preferredTop;
+    setPos({ left, top, below: useBelow });
   }, [anchor.left, anchor.top, anchor.width, anchor.height, anchor.bottom, extra]);
   return { ref, pos };
 }
@@ -39,11 +43,15 @@ export function HighlightBar({
   onCopy,
   onDelete,
   onClose,
+  mobileCurrent,
+  onMobileColor,
 }: {
   lang: Lang;
   anchor: DOMRect;
   /** The highlight's colour; none for a fresh selection. */
   current?: HighlightColor;
+  mobileCurrent?: MobileHighlightStyle;
+  onMobileColor?: (style: MobileHighlightStyle) => void;
   hasNote?: boolean;
   onColor: (c: HighlightColor) => void;
   onNote: () => void;
@@ -52,7 +60,8 @@ export function HighlightBar({
   onClose: () => void;
 }) {
   const t = STR[lang];
-  const { ref, pos } = usePlace(anchor);
+  const [more, setMore] = useState(false);
+  const { ref, pos } = usePlace(anchor, isAndroid ? 12 : 10, more, isAndroid ? 32 : 10, isAndroid);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -64,6 +73,29 @@ export function HighlightBar({
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [onClose]);
+
+  if (isAndroid) return <div ref={ref} className={`hlbar mc-bar${pos?.below ? " is-below" : ""}`}
+    style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden" }} role="toolbar" aria-label={t.hlToolbar}
+    onPointerDown={(e) => e.preventDefault()}>
+    <div className="mc-bar__colors" role="group" aria-label={t.hlColor}>
+      {(["yellow", "green", "blue", "pink", "underline"] as const).map((c) => <button key={c}
+        className={`mc-dot${(mobileCurrent ?? current) === c ? " is-on" : ""}${c === "underline" ? " mc-dot--underline" : ""}`}
+        style={{ background: c === "underline" ? "transparent" : c === "green" ? "#7ed18c" : COLOR_HEX[c] }}
+        aria-label={t[`hl_${c}`]} aria-pressed={(mobileCurrent ?? current) === c}
+        onClick={() => onMobileColor ? onMobileColor(c) : onColor(c === "green" || c === "underline" ? "yellow" : c)}>
+        {c === "underline" && <Icon name="underline" size={20} />}
+      </button>)}
+    </div>
+    <div className="mc-bar__actions">
+      <button onClick={onNote} aria-label={hasNote ? t.hlEditNote : t.hlAddNote}><Icon name="edit" size={18} />{t.hlNoteTitle}</button>
+      <button onClick={onCopy}><Icon name="copy" size={18} />{t.hlCopy}</button>
+      <button onClick={() => setMore((v) => !v)} aria-label={t.mcMore} aria-expanded={more}><Icon name="more" size={20} /></button>
+    </div>
+    {more && <div className="mc-bar__more">
+      {onDelete && <button onClick={onDelete}><Icon name="trash" size={18} />{t.hlDelete}</button>}
+      <button onClick={onClose}><Icon name="close" size={18} />{t.closeReader}</button>
+    </div>}
+  </div>;
 
   return (
     <div

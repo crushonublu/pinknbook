@@ -42,7 +42,7 @@ const SVG = "http://www.w3.org/2000/svg";
  * dotted underline when the highlight carries a note. Light pages multiply
  * the colour into the paper; dark pages lay it on more thinly.
  */
-export function drawHighlight(rects: DOMRectList | DOMRect[], opts: { color: string; note: boolean; dark: boolean }) {
+export function drawHighlight(rects: DOMRectList | DOMRect[], opts: { color: string; note: boolean; dark: boolean; underline?: boolean }) {
   const outer = document.createElementNS(SVG, "g");
   const g = document.createElementNS(SVG, "g");
   outer.append(g);
@@ -52,8 +52,8 @@ export function drawHighlight(rects: DOMRectList | DOMRect[], opts: { color: str
   for (const r of Array.from(rects)) {
     const el = document.createElementNS(SVG, "rect");
     el.setAttribute("x", String(r.left));
-    el.setAttribute("y", String(r.top));
-    el.setAttribute("height", String(r.height));
+    el.setAttribute("y", String(opts.underline ? r.bottom - 2 : r.top));
+    el.setAttribute("height", String(opts.underline ? 2 : r.height));
     el.setAttribute("width", String(r.width));
     el.setAttribute("rx", "2");
     g.append(el);

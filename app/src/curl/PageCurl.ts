@@ -78,6 +78,19 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+/** Cheap fingerprint of a section's styling: changes when its CSS or fonts do. */
+function styleSignature(doc: Document): string {
+  let h = 0;
+  const add = (t: string | null | undefined) => {
+    if (t) for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0;
+    h = (h * 31 + 7) | 0;
+  };
+  for (const st of Array.from(doc.querySelectorAll?.("style") ?? [])) add(st.textContent);
+  add(doc.documentElement?.getAttribute?.("style"));
+  add(doc.documentElement?.className);
+  return `${h}:${doc.fonts?.status ?? ""}`;
+}
+
 function opaqueBg(el: Element | null, win: Window = window): string | null {
   if (!el) return null;
   const c = win.getComputedStyle(el).backgroundColor;
@@ -88,7 +101,8 @@ function opaqueBg(el: Element | null, win: Window = window): string | null {
 interface Drag {
   id: number;
   dir: Dir;
-  zone: HTMLElement;
+  zone: HTMLElement | null;
+  releasing?: boolean;
   x0: number;
   y0: number;
   x: number;
@@ -101,6 +115,14 @@ interface Drag {
   raf: number;
 }
 
+export interface PageCurlOptions {
+  /** Disable mouse edge overlays for iframe-owned touch gestures. */
+  zones?: boolean;
+  /** Use only ready bitmaps: a cold mobile turn must never wait for snapshots. */
+  readyOnly?: boolean;
+  navigate?: (dir: Dir) => Promise<void>;
+}
+
 export class PageCurl {
   /** Turn the effect off to get foliate's plain instant page turns. */
   enabled = true;
@@ -109,6 +131,7 @@ export class PageCurl {
   private ctx = this.canvas.getContext("2d")!;
   private zones: HTMLDivElement[] = [];
   private cache = new Map<string, Promise<HTMLCanvasElement>>();
+  private readySnapshots = new Map<string, HTMLCanvasElement>();
   private styleGen = 0;
   private busy = false;
   private hurry = false;
@@ -122,12 +145,13 @@ export class PageCurl {
   constructor(
     private host: HTMLElement,
     private view: FoliateView,
+    private options: PageCurlOptions = {},
   ) {
     this.canvas.className = "curl-canvas";
     this.canvas.setAttribute("aria-hidden", "true");
     this.canvas.style.display = "none";
     host.append(this.canvas);
-    for (const dir of [-1, 1] as Dir[]) {
+    for (const dir of (options.zones === false ? [] : [-1, 1]) as Dir[]) {
       const z = document.createElement("div");
       z.className = `curl-zone curl-zone--${dir < 0 ? "prev" : "next"}`;
       z.setAttribute("aria-hidden", "true");
@@ -158,12 +182,14 @@ export class PageCurl {
     this.canvas.remove();
     this.zones.forEach((z) => z.remove());
     this.cache.clear();
+    this.readySnapshots.clear();
   }
 
   /** Styles (font size, theme) changed: cached page bitmaps are stale. */
   invalidate() {
     this.styleGen++;
     this.cache.clear();
+    this.readySnapshots.clear();
     this.onRelocate();
   }
 
@@ -179,6 +205,25 @@ export class PageCurl {
   }
 
   // ───────────────────────── layout ─────────────────────────
+
+  /** External touch drag; coordinates are in the main window's client space.
+   * False means the effect is busy: the gesture must still be consumed. */
+  beginDrag(dir: Dir, clientX: number, clientY: number, startedAt = performance.now()): boolean {
+    if (this.destroyed || this.busy || this.drag) return false;
+    this.onDown({ button: 0, pointerId: -1, clientX, clientY, preventDefault() {} } as PointerEvent, dir, null, startedAt);
+    return true;
+  }
+
+  moveDrag(clientX: number, clientY: number) {
+    if (this.drag?.releasing) return;
+    this.onMove({ pointerId: -1, clientX, clientY } as PointerEvent);
+  }
+
+  endDrag(cancelled = false) {
+    this.onUp({ pointerId: -1 } as PointerEvent, cancelled);
+  }
+
+  get running() { return this.busy; }
 
   private measure(): Layout | null {
     const r = this.view?.renderer;
@@ -213,7 +258,12 @@ export class PageCurl {
     paper ??= "#ffffff";
 
     const index: number = content.index;
-    const key = [index, size, fr.width, fr.height, host.height, this.styleGen, dpr, paper].join("|");
+    const parts: unknown[] = [index, size, fr.width, fr.height, host.height, this.styleGen, dpr, paper];
+    // Touch mode (Android): the section's styles can still change after the
+    // first relocation (reader CSS, injected styles, web fonts), which would
+    // leave stale bitmaps that break lines differently from the live page.
+    if (this.options.readyOnly) parts.push(styleSignature(doc));
+    const key = parts.join("|");
     return {
       doc,
       index,
@@ -244,7 +294,7 @@ export class PageCurl {
     const L = this.measure();
     const usable = !!L && this.enabled && !this.reduced.matches;
     for (const z of this.zones) z.style.display = usable ? "block" : "none";
-    if (!L || !usable) return;
+    if (!L || !usable || !this.zones.length) return;
     const grab = Math.max(36, Math.min(110, L.W * 0.12));
     const [prev, next] = this.zones;
     prev.style.left = "0px";
@@ -278,9 +328,15 @@ export class PageCurl {
       }),
       SNAP_TIMEOUT,
     );
-    p.catch(() => this.cache.delete(key));
+    p.then((canvas) => {
+      if (!this.destroyed && this.cache.get(key) === p) this.readySnapshots.set(key, canvas);
+    }, () => { this.cache.delete(key); this.readySnapshots.delete(key); });
     this.cache.set(key, p);
-    while (this.cache.size > CACHE_MAX) this.cache.delete(this.cache.keys().next().value!);
+    while (this.cache.size > CACHE_MAX) {
+      const oldest = this.cache.keys().next().value!;
+      this.cache.delete(oldest);
+      this.readySnapshots.delete(oldest);
+    }
     return p;
   }
 
@@ -292,6 +348,10 @@ export class PageCurl {
       if (this.busy || !this.enabled || this.reduced.matches) return;
       const L = this.measure();
       if (!L) return;
+      if (this.options.readyOnly && L.doc.fonts?.status === "loading") {
+        void L.doc.fonts.ready.then(() => this.onRelocate());
+        return;
+      }
       for (const p of [L.page, L.page + 1, L.page - 1]) {
         if (p < 1 || p > L.pages - 2 || this.busy) continue;
         await this.snap(L, p).catch(() => undefined);
@@ -331,6 +391,8 @@ export class PageCurl {
   // ───────────────────────── turning ─────────────────────────
 
   private nav(dir: Dir): Promise<void> {
+    if (this.destroyed) return Promise.resolve();
+    if (this.options.navigate) return this.options.navigate(dir);
     return dir > 0 ? this.view.next() : this.view.prev();
   }
 
@@ -358,6 +420,10 @@ export class PageCurl {
    * not move) and there is nothing left to animate.
    */
   private async prepare(L: Layout, dir: Dir): Promise<Prep | null> {
+    if (this.options.readyOnly && (
+      !this.readySnapshots.has(`${L.key}|${L.page}`) ||
+      !this.readySnapshots.has(`${L.key}|${L.page + dir}`)
+    )) throw new NoCurl();
     let cur: HTMLCanvasElement;
     try {
       cur = await this.snap(L, L.page);
@@ -497,14 +563,14 @@ export class PageCurl {
     return { x: G.x + dx, y: G.y + dy };
   }
 
-  private onDown(e: PointerEvent, dir: Dir, zone: HTMLElement) {
+  private onDown(e: PointerEvent, dir: Dir, zone: HTMLElement | null, startedAt = performance.now()) {
     if (e.button !== 0 || this.drag) return;
     e.preventDefault();
     if (this.busy) {
       this.turn(dir);
       return;
     }
-    zone.setPointerCapture(e.pointerId);
+    zone?.setPointerCapture(e.pointerId);
     const d: Drag = {
       id: e.pointerId,
       dir,
@@ -514,7 +580,7 @@ export class PageCurl {
       x: e.clientX,
       y: e.clientY,
       moved: 0,
-      samples: [],
+      samples: zone ? [] : [{ x: e.clientX, t: startedAt }],
       prep: Promise.resolve("nocurl"),
       ready: null,
       G: null,
@@ -557,7 +623,10 @@ export class PageCurl {
     d.x = e.clientX;
     d.y = e.clientY;
     d.moved = Math.max(d.moved, Math.hypot(d.x - d.x0, d.y - d.y0));
-    if (d.ready && d.G) {
+    if (!d.zone) {
+      d.samples.push({ x: d.x, t: performance.now() });
+      if (d.samples.length > 6) d.samples.shift();
+    } else if (d.ready && d.G) {
       d.samples.push({ x: this.fingerOf(d, d.ready, d.G).x, t: performance.now() });
       if (d.samples.length > 6) d.samples.shift();
     }
@@ -567,7 +636,9 @@ export class PageCurl {
   private onUp(e: PointerEvent, cancelled: boolean) {
     const d = this.drag;
     if (!d || e.pointerId !== d.id) return;
-    if (d.zone.hasPointerCapture(e.pointerId)) d.zone.releasePointerCapture(e.pointerId);
+    if (d.zone?.hasPointerCapture(e.pointerId)) d.zone.releasePointerCapture(e.pointerId);
+    if (d.releasing) return;
+    d.releasing = true;
     void this.release(d, cancelled);
   }
 
@@ -578,7 +649,7 @@ export class PageCurl {
       if (prep === "nocurl") {
         // No curl possible: a tap or a real swipe still turns the page plainly.
         this.hide();
-        const swipe = (d.x - d.x0) * -d.dir > 24;
+        const swipe = (d.x - d.x0) * -d.dir > (d.zone ? 24 : 12);
         if (!cancelled && (d.moved < 4 || swipe)) await this.nav(d.dir);
         return;
       }
@@ -598,7 +669,8 @@ export class PageCurl {
         const recent = d.samples.filter((s) => s.t > performance.now() - 120);
         const a = recent[0];
         const b = recent[recent.length - 1];
-        const v = a && b && b.t > a.t ? (b.x - a.x) / (b.t - a.t) : 0; // px/ms, sheet x
+        const velocityScale = d.zone ? 1 : prep.scene.m * (prep.reverse ? 2 * G.x / W : 1);
+        const v = a && b && b.t > a.t ? velocityScale * (b.x - a.x) / (b.t - a.t) : 0; // px/ms, sheet x
         const flick = Math.abs(v) > 0.5 && d.moved > 24;
         // Moving toward the spine (v < 0) carries the sheet over.
         const goingOver = flick ? v < 0 : prep.reverse ? F.x < -W / 2 : F.x < W / 2;

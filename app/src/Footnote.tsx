@@ -1,3 +1,6 @@
+import { isAndroid } from "./platform";
+import { STR, type Lang } from "./i18n";
+import { MobileReaderSheet } from "./mobile/MobileReaderSheet";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { usePlace } from "./AnnotationPopup";
 
@@ -154,12 +157,14 @@ export async function loadFootnote(view: any, index: number, a: Element): Promis
 /** The floating box with a footnote's text; stays open while hovered. */
 export function FootnotePopup({
   peek,
+  lang,
   font,
   onEnter,
   onLeave,
   onClose,
 }: {
   peek: FootnotePeek;
+  lang: Lang;
   font: string;
   onEnter: () => void;
   onLeave: () => void;
@@ -181,6 +186,9 @@ export function FootnotePopup({
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   }, [onClose]);
+  if (isAndroid) return <MobileReaderSheet title={peek.label?.text ?? STR[lang].mcFootnote} closeLabel={STR[lang].closeReader} onClose={onClose}>
+    <div className="mc-footnote" style={{ fontFamily: font }}><div ref={body} className="fnote__body" /></div>
+  </MobileReaderSheet>;
   return (
     <div
       ref={ref}

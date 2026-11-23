@@ -4,6 +4,9 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { STR, type Lang } from "./i18n";
 import { Icon } from "./icons";
+import { isAndroid } from "./platform";
+import { HighlightBar } from "./AnnotationPopup";
+import type { MobileHighlightStyle } from "./mobile/annotationStyle";
 import {
   canSpeak,
   firstTab,
@@ -68,11 +71,17 @@ export function DictPopup({
   req,
   onClose,
   onSaved,
+  onHighlight,
+  onNote,
+  onCopy,
 }: {
   lang: Lang;
   req: DictRequest;
   onClose: () => void;
   onSaved?: () => void;
+  onHighlight?: (style: MobileHighlightStyle) => void;
+  onNote?: () => void;
+  onCopy?: () => void;
 }) {
   const t = STR[lang];
   const [res, setRes] = useState<DictLookup | null>(null);
@@ -83,6 +92,7 @@ export function DictPopup({
   const [wikt, setWikt] = useState<{ state: "idle" | "busy" | "none" | "fail" | "ok"; frag?: DocumentFragment; url?: string }>({ state: "idle" });
   const [wiki, setWiki] = useState<{ state: "idle" | "busy" | "none" | "fail" | "ok"; data?: WikiSummary }>({ state: "idle" });
   const [saved, setSaved] = useState(false);
+  const [more, setMore] = useState(false);
   const wiktBody = useRef<HTMLDivElement>(null);
   const preferVi = req.bookLang.toLowerCase().startsWith("vi");
 
@@ -142,7 +152,10 @@ export function DictPopup({
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (isAndroid) { e.preventDefault(); e.stopImmediatePropagation(); }
+        onClose();
+      }
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
@@ -150,7 +163,8 @@ export function DictPopup({
 
   const { ref, pos } = usePlacement(req.rect, [res, tab, install.phase, wikt.state, wiki.state, parts]);
 
-  const entries: DictEntry[] = res && (tab === "vi" || tab === "envi" || tab === "enen") ? res[tab] : [];
+  const entries: DictEntry[] = isAndroid && res && !res.missing && (tab === "vi" || tab === "envi" || tab === "enen")
+    ? (res.envi.length ? res.envi : res.vi.length ? res.vi : res.enen) : res && (tab === "vi" || tab === "envi" || tab === "enen") ? res[tab] : [];
   const wordLang: "vi" | "en" = tab === "vi" || (tab !== "envi" && tab !== "enen" && (hasVietnameseMarks(word) || preferVi)) ? "vi" : "en";
   const syllables = word.split(/\s+/).filter(Boolean);
   const tabs: { id: DictTab; label: string }[] = [
@@ -199,20 +213,22 @@ export function DictPopup({
   const showSetup = res?.missing && !later && (tab === "vi" || tab === "envi" || tab === "enen");
   const pct = install.total ? Math.round(((install.done ?? 0) / install.total) * 100) : 0;
   const mb = (n?: number) => `${((n ?? 0) / 1048576).toFixed(1)} MB`;
+  const ipa = entries[0]?.body.ipa || (isAndroid ? res?.enen[0]?.body.ipa : undefined);
 
   return (
     <div
       ref={ref}
-      className="dict"
-      style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden" }}
+      className={`dict${isAndroid ? " mc-dict" : ""}`}
+      style={isAndroid ? undefined : pos ? { left: pos.left, top: pos.top } : { visibility: "hidden" }}
       role="dialog"
       aria-label={t.dcLookup}
-      onPointerDown={(e) => e.preventDefault() /* keep the selection */}
+      onPointerDown={(e) => { if (!isAndroid || (e.target as Element).closest("button")) e.preventDefault(); }}
     >
+      {isAndroid && <div className="mc-dict__handle" aria-hidden="true"><span /></div>}
       <div className="dict__head">
         <div className="dict__word">
           <span className="dict__hw">{word || req.candidates[req.candidates.length - 1]}</span>
-          {entries[0]?.body.ipa && <span className="dict__ipa">/{entries[0].body.ipa}/</span>}
+          {ipa && <span className="dict__ipa">/{ipa}/</span>}
         </div>
         <div className="dict__tools">
           {canSpeak(wordLang) && (
@@ -220,7 +236,7 @@ export function DictPopup({
               <Icon name="speaker" size={16} />
             </button>
           )}
-          <button
+          {!isAndroid && <button
             onClick={save}
             className={saved ? "is-on" : undefined}
             disabled={!word}
@@ -228,7 +244,7 @@ export function DictPopup({
             title={saved ? t.dcSaved : t.dcSave}
           >
             <Icon name={saved ? "checkRead" : "saveWord"} size={16} />
-          </button>
+          </button>}
           <button onClick={openSource} disabled={!word} aria-label={t.dcOpen} title={t.dcOpen}>
             <Icon name="external" size={16} />
           </button>
@@ -238,13 +254,13 @@ export function DictPopup({
         </div>
       </div>
 
-      <div className="dict__tabs" role="tablist">
+      {(!isAndroid || res?.missing || tab === "wiki" || tab === "wikt") && <div className="dict__tabs" role="tablist">
         {tabs.map((x) => (
           <button key={x.id} role="tab" aria-selected={tab === x.id} className={tab === x.id ? "is-on" : ""} onClick={() => setTab(x.id)}>
             {x.label}
           </button>
         ))}
-      </div>
+      </div>}
 
       <div className="dict__body">
         {!res && <p className="dict__muted">{t.dcLoading}</p>}
@@ -318,7 +334,10 @@ export function DictPopup({
                 </div>
               ))
             ) : entries.length ? (
-              <Entries list={entries} />
+              <>
+                <Entries list={entries} />
+                {isAndroid && res.enen !== entries && res.enen[0]?.body.senses[0] && <p className="dict__muted" lang="en">{res.enen[0].body.senses[0].g.join("; ")}</p>}
+              </>
             ) : (
               <p className="dict__muted">{t.dcNotFound.replace("{0}", word)}</p>
             )}
@@ -347,6 +366,15 @@ export function DictPopup({
           ))}
       </div>
 
+      {isAndroid && <>
+        <div className="mc-dict__actions">
+          <button className="mc-dict__save" onClick={save} disabled={!word || saved}><Icon name={saved ? "checkRead" : "plus"} size={18} />{saved ? t.dcSaved : t.mcSaveWord}</button>
+          <button onClick={() => onHighlight?.("yellow")} aria-label={t.mcHighlightWord}><span className="mc-yellow" /></button>
+          <button onClick={() => setMore((v) => !v)} aria-label={t.mcMore} aria-expanded={more}><Icon name="more" size={20} /></button>
+        </div>
+        {more && <HighlightBar lang={lang} anchor={req.rect} onColor={(c) => onHighlight?.(c)} onMobileColor={onHighlight}
+          onNote={() => onNote?.()} onCopy={() => onCopy?.()} onClose={() => setMore(false)} />}
+      </>}
       <div className="dict__foot">
         {t.dcSource.replace(
           "{0}",

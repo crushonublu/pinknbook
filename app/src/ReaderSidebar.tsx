@@ -1,3 +1,5 @@
+import { isAndroid } from "./platform";
+import { MobileReaderSheet } from "./mobile/MobileReaderSheet";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { STR, type Lang } from "./i18n";
 import { Icon } from "./icons";
@@ -111,16 +113,14 @@ export function ReaderSidebar({
     return () => window.removeEventListener("keydown", key, true);
   }, [onClose]);
 
-  return (
-    <>
-      <div className="rside__scrim" onClick={onClose} />
+  const panel = (
       <aside
         className="rside"
         aria-label={
           tab === "toc" ? t.contents : tab === "marks" ? t.bookmarks : tab === "notes" ? t.notes : tab === "search" ? t.bsTab : tab === "xray" ? t.xrTab : t.vbTitle
         }
       >
-        <div className="rside__head">
+        <div className="rside__head" hidden={isAndroid && !["toc", "marks", "notes"].includes(tab)}>
           <div className="rset__seg rside__tabs" role="tablist">
             <button role="tab" aria-selected={tab === "toc"} className={tab === "toc" ? "is-on" : ""} onClick={() => setTab("toc")}>
               <Icon name="toc" size={15} />
@@ -136,17 +136,17 @@ export function ReaderSidebar({
               <span className="rside__tablabel">{t.notes}</span>
               {annotations.length > 0 && <span className="rside__count">{annotations.length}</span>}
             </button>
-            <button role="tab" aria-selected={tab === "search"} className={tab === "search" ? "is-on" : ""} onClick={() => setTab("search")} title={`${t.bsTab} (Ctrl+F)`}>
+            {!isAndroid && <button role="tab" aria-selected={tab === "search"} className={tab === "search" ? "is-on" : ""} onClick={() => setTab("search")} title={`${t.bsTab} (Ctrl+F)`}>
               <Icon name="search" size={15} />
               <span className="rside__tablabel">{t.bsTab}</span>
-            </button>
-            {xrayPanel && (
+            </button>}
+            {!isAndroid && xrayPanel && (
               <button role="tab" aria-selected={tab === "xray"} className={tab === "xray" ? "is-on" : ""} onClick={() => setTab("xray")}>
                 <Icon name="xray" size={15} />
                 <span className="rside__tablabel">{t.xrTab}</span>
               </button>
             )}
-            {wordsPanel && (
+            {!isAndroid && wordsPanel && (
               <button role="tab" aria-selected={tab === "words"} className={tab === "words" ? "is-on" : ""} onClick={() => setTab("words")}>
                 <Icon name="vocab" size={15} />
                 <span className="rside__tablabel">{t.vbTab}</span>
@@ -154,9 +154,9 @@ export function ReaderSidebar({
               </button>
             )}
           </div>
-          <button className="reader__tool" onClick={onClose} aria-label={t.closeReader} title={t.closeReader}>
+          {!isAndroid && <button className="reader__tool" onClick={onClose} aria-label={t.closeReader} title={t.closeReader}>
             <Icon name="close" size={18} />
-          </button>
+          </button>}
         </div>
 
         <div
@@ -230,7 +230,7 @@ export function ReaderSidebar({
                     {t.notesWithNote}
                   </button>
                 </div>
-                {kindleCapable ? (
+                {isAndroid ? null : kindleCapable ? (
                   <button className="rside__sync" onClick={onSyncNotes} disabled={notesSync.state === "busy"}>
                     <Icon name="sync" size={15} className={notesSync.state === "busy" ? "icon--spin" : undefined} />
                     <span>
@@ -274,8 +274,9 @@ export function ReaderSidebar({
           )}
         </div>
       </aside>
-    </>
   );
+  if (isAndroid) return <MobileReaderSheet title={["toc", "marks", "notes"].includes(tab) ? t.mrContents : tab === "search" ? t.bsTab : tab === "xray" ? t.xrTab : t.mrWords} closeLabel={t.closeReader} onClose={onClose}>{panel}</MobileReaderSheet>;
+  return <><div className="rside__scrim" onClick={onClose} />{panel}</>;
 }
 
 function TocList({
