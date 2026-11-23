@@ -1,3 +1,5 @@
+import { MobilePicker } from "./mobile/MobilePicker";
+import { isAndroid } from "./platform";
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { STR, type Lang } from "./i18n";
@@ -178,19 +180,19 @@ export function VocabPage({
             {t.vbLearned} <span className="vocab__n">{learnedCount}</span>
           </button>
         </div>
-        <select className="select" value={book} onChange={(e) => setBook(e.target.value)} aria-label={t.vbAllBooks}>
+        {isAndroid ? <MobilePicker label={t.vbAllBooks} value={book} options={[{ value: "all", label: t.vbAllBooks }, ...books.map((b) => ({ value: b.asin, label: b.title }))]} onChange={setBook} /> : (<select className="select" value={book} onChange={(e) => setBook(e.target.value)} aria-label={t.vbAllBooks}>
           <option value="all">{t.vbAllBooks}</option>
           {books.map((b) => (
             <option key={b.asin} value={b.asin}>
               {b.title}
             </option>
           ))}
-        </select>
-        <select className="select" value={wlang} onChange={(e) => setWlang(e.target.value)} aria-label={t.vbAllLangs}>
+        </select>)}
+        {isAndroid ? <MobilePicker label={t.vbAllLangs} value={wlang} options={[{ value: "all", label: t.vbAllLangs }, { value: "vi", label: t.vbLangVi }, { value: "en", label: t.vbLangEn }]} onChange={setWlang} /> : (<select className="select" value={wlang} onChange={(e) => setWlang(e.target.value)} aria-label={t.vbAllLangs}>
           <option value="all">{t.vbAllLangs}</option>
           <option value="vi">{t.vbLangVi}</option>
           <option value="en">{t.vbLangEn}</option>
-        </select>
+        </select>)}
       </header>
       {words == null ? (
         <div className="center muted">{t.loading}</div>

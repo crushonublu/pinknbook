@@ -1,3 +1,5 @@
+import { MobilePicker } from "./mobile/MobilePicker";
+import { isAndroid } from "./platform";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { STR, type Lang } from "./i18n";
@@ -393,7 +395,7 @@ export default function BookEditor({
 
           <label className="field">
             <span className="field__label">{t.shelf}</span>
-            <select className="field__select" value={shelf} onChange={(e) => setShelf(e.target.value as ReadStatus | "auto")}>
+            {isAndroid ? <MobilePicker label={t.shelf} value={shelf} options={[{ value: "auto", label: t.statusAuto }, ...STATUS_ORDER.map((s) => ({ value: s, label: statusLabel(t, s) }))]} onChange={(s) => setShelf(s as ReadStatus | "auto")} /> : (<select className="field__select" value={shelf} onChange={(e) => setShelf(e.target.value as ReadStatus | "auto")}>
               <option value="auto">
                 {t.statusAuto}
               </option>
@@ -402,7 +404,7 @@ export default function BookEditor({
                   {statusLabel(t, s)}
                 </option>
               ))}
-            </select>
+            </select>)}
           </label>
 
           {error && <p className="editor__error small">{error}</p>}

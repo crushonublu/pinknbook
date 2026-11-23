@@ -215,8 +215,10 @@ export default function Reader({
   speed = 1500,
   onLogged,
   startAt,
+  signedIn = false,
 }: {
   row: LibraryRow;
+  signedIn?: boolean;
   lang: Lang;
   theme: "light" | "dark";
   onClose: () => void;
@@ -245,6 +247,9 @@ export default function Reader({
   const [errMsg, setErrMsg] = useState("");
   const [fraction, setFraction] = useState(0);
   const [sync, setSync] = useState<SyncDialog | null>(null);
+  useMobileDismiss(isAndroid && !!sync, () => {
+    if (sync?.state !== "checking") setSync(null);
+  });
   const [locMap, setLocMap] = useState<LocMap | null>(null);
   const [prefs, setPrefs] = useState<ReaderPrefs>(loadPrefs);
   const prefsRef = useRef(prefs);
@@ -268,6 +273,7 @@ export default function Reader({
   useEffect(() => {
     if (!isAndroid) return;
     const dismiss = () => {
+      if (document.querySelector("[data-mobile-picker]")) return false;
       // Let App and the existing overlay handlers dismiss annotations first.
       if (document.querySelector(".dict, .hlbar, .hlnote, .fnote, .mc-footnote, .xrg, .reader__modal")) return false;
       if (showSettings) { setShowSettings(false); setAppearance(true); }
@@ -1429,13 +1435,14 @@ export default function Reader({
               <button onClick={() => { setMobileMenu(false); setSidebar("search"); }}><Icon name="search" size={18} />{t.bsTab}</button>
               {prefs.xray && <button onClick={() => { setMobileMenu(false); setSidebar("xray"); }}><Icon name="xray" size={18} />{t.xrTab}</button>}
               <button onClick={() => { setMobileMenu(false); setSidebar("words"); }}><Icon name="vocab" size={18} />{t.mrWords}</button>
+              {!local && signedIn && <button disabled={sync?.state === "checking"} onClick={() => { setMobileMenu(false); void checkSync(); }}><Icon name="sync" size={18} />{t.mobileSyncKindle}</button>}
               <button onClick={() => { setMobileMenu(false); setAppearance(true); }}><span className="mr-menu__aa">Aa</span>{t.mrThemes}</button>
             </nav>
           </>}
         </>}
         {(appearance || showSettings) && <MobileReaderSheet title={showSettings ? settingsSection === "tools" ? t.mrTools : t.mrCustomize : t.mrThemes} closeLabel={t.closeReader}
           onClose={() => { if (showSettings) { setShowSettings(false); setAppearance(true); } else setAppearance(false); }}>
-          {showSettings ? <ReaderSettings prefs={prefs} set={setPref} lang={lang} appTheme={theme} kindle={false} mobileSection={settingsSection}
+          {showSettings ? <ReaderSettings prefs={prefs} set={setPref} lang={lang} appTheme={theme} kindle={!local && signedIn} mobileSection={settingsSection}
             onClose={() => { setShowSettings(false); setAppearance(true); }} />
             : <MobileReaderThemes prefs={prefs} set={setPref} lang={lang}
               onCustomize={() => { setAppearance(false); setSettingsSection("customize"); setShowSettings(true); }}

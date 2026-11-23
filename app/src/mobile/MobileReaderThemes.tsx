@@ -1,3 +1,4 @@
+import { MobilePicker } from "./MobilePicker";
 import { STR, type Lang } from "../i18n";
 import { SIZE_MAX, SIZE_MIN, THEMES, type ReaderPrefs, type ReaderTheme } from "../readerPrefs";
 
@@ -22,9 +23,7 @@ export function MobileReaderThemes({ prefs, set, lang, onCustomize, onTools }: {
         <b style={{ fontWeight: id === "bold" ? 800 : id === "paper" ? 400 : 600 }}>Aa</b><span>{label}</span>
       </button>)}
     </div>
-    <label className="mr-themes__row">{t.mrTurn}<select aria-label={t.mrTurn} value={prefs.mobileMotion ?? "curl"} onChange={(e) => set({ mobileMotion: e.target.value as "curl" | "slide" | "none" })}>
-      <option value="curl">{t.mrCurl}</option><option value="slide">{t.mrSlide}</option><option value="none">{t.mrNone}</option>
-    </select></label>
+    <div className="mr-themes__row">{t.mrTurn}<MobilePicker label={t.mrTurn} value={prefs.mobileMotion ?? "curl"} options={[{ value: "curl", label: t.mrCurl }, { value: "slide", label: t.mrSlide }, { value: "none", label: t.mrNone }]} onChange={(mobileMotion) => set({ mobileMotion })} /></div>
     <button className="mr-themes__row" onClick={onCustomize}>{t.mrCustomize}<span>›</span></button>
     <button className="mr-themes__row" onClick={onTools}>{t.mrTools}<span>›</span></button>
   </div>;

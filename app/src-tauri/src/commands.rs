@@ -32,13 +32,22 @@ pub fn auth_status() -> Result<Option<AccountInfo>, String> {
 /// Open the Amazon sign-in window and register a fresh device on success.
 /// Emits `login-complete` (AccountInfo) or `login-error` (String) when done.
 #[tauri::command]
-pub async fn login(app: AppHandle) -> Result<(), String> {
-    // Phones get one window: the sign-in page cannot open beside the app yet.
-    #[cfg(mobile)]
+pub async fn login(app: AppHandle, title: Option<String>, note: Option<String>) -> Result<(), String> {
+    #[cfg(target_os = "android")]
     {
-        let _ = app;
-        return Err("Amazon sign-in is not available on Android yet".into());
+        let (url, pending) = register::build_login_url(register::DEVICE_TYPE);
+        *app.state::<MobileLogin>().0.lock().map_err(|_| "Sign-in state unavailable")? = Some(pending);
+        let result = android_activity(&app, Some((url,
+            title.unwrap_or_else(|| "Sign in with Amazon".into()),
+            note.unwrap_or_else(|| "pntome cannot read your password. Device keys are stored securely by Android.".into())
+        ))).await;
+        if result.is_err() { app.state::<MobileLogin>().0.lock().map_err(|_| "Sign-in state unavailable")?.take(); }
+        return result;
     }
+    #[cfg(not(target_os = "android"))]
+    let _ = (title, note);
+    #[cfg(all(mobile, not(target_os = "android")))]
+    { let _ = app; return Err("Sign-in is not available on this platform".into()); }
     #[cfg(desktop)]
     {
         let (url, pending) = register::build_login_url(register::DEVICE_TYPE);
@@ -79,7 +88,12 @@ async fn complete_login(app: AppHandle, pending: register::PendingRegistration, 
             .ok_or_else(|| "no authorization_code in redirect".to_string())?;
         let creds_bundle = register::register(&pending, &code)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| {
+                #[cfg(target_os = "android")]
+                { let _ = e; "Amazon device registration failed".to_string() }
+                #[cfg(not(target_os = "android"))]
+                { e.to_string() }
+            })?;
         creds::save(&creds_bundle)?;
         let db: State<Db> = app.state();
         db.save_account(
@@ -98,6 +112,7 @@ async fn complete_login(app: AppHandle, pending: register::PendingRegistration, 
     .await;
 
     // Close the login window regardless of outcome.
+    #[cfg(desktop)]
     if let Some(w) = app.get_webview_window("login") {
         let _ = w.close();
     }
@@ -111,11 +126,83 @@ async fn complete_login(app: AppHandle, pending: register::PendingRegistration, 
     }
 }
 
+// Pending PKCE state never crosses into JavaScript or persistent storage.
+#[cfg(target_os = "android")]
+#[derive(Default)]
+pub struct MobileLogin(pub std::sync::Mutex<Option<register::PendingRegistration>>);
+
+#[tauri::command]
+pub async fn complete_mobile_login(app: AppHandle, redirect: String) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    {
+        let pending = app.state::<MobileLogin>().0.lock()
+            .map_err(|_| "Sign-in state unavailable")?.take().ok_or("No pending sign-in")?;
+        let url = url::Url::parse(&redirect).map_err(|_| "Invalid Amazon redirect")?;
+        if url.scheme() != "https" || url.host_str() != Some("www.amazon.com")
+            || url.port_or_known_default() != Some(443) || !url.username().is_empty()
+            || url.password().is_some() || !url.path().starts_with("/ap/maplanding") {
+            return Err("Invalid Amazon redirect".into());
+        }
+        complete_login(app, pending, redirect).await;
+        Ok(())
+    }
+    #[cfg(not(target_os = "android"))]
+    { let _ = (app, redirect); Err("Mobile sign-in is only available on Android".into()) }
+}
+
+#[tauri::command]
+pub fn cancel_mobile_login(app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    { app.state::<MobileLogin>().0.lock().map_err(|_| "Sign-in state unavailable")?.take(); }
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+async fn android_activity(app: &AppHandle, signin: Option<(String, String, String)>) -> Result<(), String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.get_webview_window("main").ok_or("Main webview unavailable")?
+        .with_webview(move |w| {
+            w.jni_handle().exec(move |env, activity, _| {
+                let result = (|| -> jni::errors::Result<()> {
+                    if let Some((url, title, note)) = signin {
+                        let url = env.new_string(url)?;
+                        let title = env.new_string(title)?;
+                        let note = env.new_string(note)?;
+                        env.call_method(activity, "openAmazonSignIn",
+                            "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+                            &[(&url).into(), (&title).into(), (&note).into()])?;
+                    } else {
+                        env.call_method(activity, "clearAmazonCookies", "()V", &[])?;
+                    }
+                    Ok(())
+                })();
+                if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
+                let _ = tx.send(result.map_err(|_| "Android sign-in screen unavailable".to_string()));
+            });
+        }).map_err(|_| "Main webview unavailable")?;
+    rx.await.map_err(|_| "Android sign-in screen unavailable".to_string())?
+}
+
 /// Sign out of Amazon. The app then carries on as a guest. With
 /// `clear_kindle`, the Kindle books and their downloaded files are taken off
 /// this computer too; books added from this computer always stay.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub fn logout(app: AppHandle, clear_kindle: Option<bool>) -> Result<(), String> {
+    finish_logout(app, clear_kindle)
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn logout(app: AppHandle, clear_kindle: Option<bool>) -> Result<(), String> {
+    app.state::<MobileLogin>().0.lock().map_err(|_| "Sign-in state unavailable")?.take();
+    android_activity(&app, None).await?;
+    finish_logout(app, clear_kindle)
+}
+
+fn finish_logout(app: AppHandle, clear_kindle: Option<bool>) -> Result<(), String> {
     creds::clear()?;
     let db: State<Db> = app.state();
     crate::stats::set_setting(&db, GUEST_KEY, "1")?;

@@ -7,6 +7,8 @@
 //! in a tiny "meta" entry. Each entry is still DPAPI-protected per user; nothing
 //! secret is written to SQLite or disk.
 
+#[cfg(not(target_os = "android"))]
+mod desktop {
 use crate::adp::register::Credentials;
 
 const SERVICE: &str = "pinknbook";
@@ -110,3 +112,62 @@ pub fn clear() -> Result<(), String> {
         Err(e) => Err(e.to_string()),
     }
 }
+
+}
+#[cfg(not(target_os = "android"))]
+pub use desktop::{save, load, clear};
+
+#[cfg(target_os = "android")]
+mod android {
+    use crate::adp::register::Credentials;
+    use jni::{objects::{JClass, JObject, JString, JValue}, JavaVM};
+
+    fn store(method: &str, value: Option<&str>) -> Result<Option<String>, String> {
+        let result = (|| -> jni::errors::Result<Option<String>> {
+            let ctx = ndk_context::android_context();
+            // The context is owned by Android and remains valid for the app lifetime.
+            let vm = unsafe { JavaVM::from_raw(ctx.vm().cast()) }?;
+            let mut env = vm.attach_current_thread()?;
+            let context = unsafe { JObject::from_raw(ctx.context().cast()) };
+            let result = env.with_local_frame(16, |env| -> jni::errors::Result<Option<String>> {
+                let loader = env.call_method(&context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?.l()?;
+                let name = env.new_string("com.pinknbook.app.SecureStore")?;
+                let class = env.call_method(loader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", &[JValue::Object(&name)])?.l()?;
+                let class = JClass::from(class);
+                let name = env.new_string("amazon-credentials")?;
+                let mut args = vec![JValue::Object(&context), JValue::Object(&name)];
+                let data;
+                let signature = if let Some(value) = value {
+                    data = env.new_string(value)?;
+                    args.push(JValue::Object(&data));
+                    "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V"
+                } else if method == "get" {
+                    "(Landroid/content/Context;Ljava/lang/String;)Ljava/lang/String;"
+                } else {
+                    "(Landroid/content/Context;Ljava/lang/String;)V"
+                };
+                let result = env.call_static_method(class, method, signature, &args)?;
+                if method == "get" {
+                    let object = result.l()?;
+                    if object.is_null() { Ok(None) }
+                    else { Ok(Some(env.get_string(&JString::from(object))?.into())) }
+                } else { Ok(None) }
+            });
+            // Never describe Java exceptions: they may contain secret values.
+            if env.exception_check().unwrap_or(false) { let _ = env.exception_clear(); }
+            result
+        })();
+        result.map_err(|_| "Android secure storage failed".to_string())
+    }
+    pub fn save(creds: &Credentials) -> Result<(), String> {
+        let json = serde_json::to_string(creds).map_err(|_| "Could not encode credentials")?;
+        store("put", Some(&json)).map(|_| ())
+    }
+    pub fn load() -> Result<Option<Credentials>, String> {
+        store("get", None)?.map(|json| serde_json::from_str(&json)
+            .map_err(|_| "Could not decode stored credentials".to_string())).transpose()
+    }
+    pub fn clear() -> Result<(), String> { store("remove", None).map(|_| ()) }
+}
+#[cfg(target_os = "android")]
+pub use android::{save, load, clear};

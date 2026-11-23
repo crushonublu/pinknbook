@@ -8,7 +8,36 @@ import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 
 class MainActivity : TauriActivity() {
+  private var mainWebView: WebView? = null
+  private var amazonSignIn: AmazonSignIn? = null
+
+  // Native-only entry point: deliberately absent from the JavascriptInterface.
+  @androidx.annotation.Keep
+  fun openAmazonSignIn(url: String, title: String, note: String) {
+    require(AmazonSignIn.isAmazonPath(url, "/ap/signin"))
+    runOnUiThread {
+      // Superseding an attempt must not cancel its replacement's PKCE state.
+      amazonSignIn?.close(false)
+      amazonSignIn = AmazonSignIn(this, url, title, note) { redirect ->
+        val detail = redirect?.let { org.json.JSONObject.quote(it) } ?: "null"
+        mainWebView?.evaluateJavascript("window.dispatchEvent(new CustomEvent('pntome-signin',{detail:$detail}))", null)
+        amazonSignIn = null
+      }.also { it.show() }
+    }
+  }
+
+  @androidx.annotation.Keep
+  fun clearAmazonCookies() {
+    runOnUiThread {
+      amazonSignIn?.close()
+      android.webkit.CookieManager.getInstance().removeAllCookies {
+        android.webkit.CookieManager.getInstance().flush()
+      }
+    }
+  }
+
   override fun onWebViewCreate(webView: WebView) {
+    mainWebView = webView
     super.onWebViewCreate(webView)
     val bridge = ReaderGestures(webView)
     webView.addJavascriptInterface(bridge, "PntomeReader")
@@ -45,6 +74,12 @@ class MainActivity : TauriActivity() {
         Rect(webView.width - width, top, webView.width, top + height)
       )
     }
+  }
+
+  override fun onDestroy() {
+    amazonSignIn?.close()
+    mainWebView = null
+    super.onDestroy()
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {

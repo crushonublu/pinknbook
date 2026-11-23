@@ -209,6 +209,25 @@ export default function App() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!isAndroid) return;
+    const signin = (event: Event) => {
+      if (event.target !== window) return;
+      const redirect: unknown = (event as CustomEvent).detail;
+      if (redirect === null) {
+        setBusy(null);
+        void invoke("cancel_mobile_login").catch(() => undefined);
+      } else if (typeof redirect === "string") {
+        void invoke("complete_mobile_login", { redirect }).catch(() => {
+          setBusy(null);
+          setError(t.loginFailed);
+        });
+      }
+    };
+    window.addEventListener("pntome-signin", signin);
+    return () => window.removeEventListener("pntome-signin", signin);
+  }, [t]);
+
   // Login + sync progress events.
   useEffect(() => {
     const unlisteners: Array<Promise<() => void>> = [
@@ -290,7 +309,7 @@ export default function App() {
     setError(null);
     setBusy(t.signingIn);
     try {
-      await invoke("login");
+      await invoke("login", isAndroid ? { title: t.signIn, note: t.mobileSignInNote } : undefined);
     } catch (e) {
       setBusy(null);
       setError(String(e));
@@ -410,7 +429,7 @@ export default function App() {
 
   const shown = useMemo(() => {
     let rows = visible;
-    if (!isAndroid && onlyMatches) rows = rows.filter((r) => r.kindle_match);
+    if (onlyMatches) rows = rows.filter((r) => r.kindle_match);
     if (isAndroid) {
       if (activeMobileSource !== "all") rows = rows.filter((r) => r.source === activeMobileSource);
     } else if (activeFilter !== "all") rows = rows.filter((r) => bookKind(r) === activeFilter);
@@ -597,7 +616,7 @@ export default function App() {
           deviceName={auth === "in" ? account?.device_name : undefined}
           guest={auth === "guest"}
           onSignOut={auth === "in" ? () => setAskLogout(true) : undefined}
-          onSignIn={auth === "guest" && !isAndroid ? doLogin : undefined}
+          onSignIn={auth === "guest" ? doLogin : undefined}
           onLocalLibrary={hasLib ? () => setShowLocalLib(true) : undefined}
           checkState={updater.checkState}
           onCheckUpdate={updater.checkNow}
@@ -613,13 +632,14 @@ export default function App() {
       {/* Everything below the title bar scrolls; the bar never moves. */}
       <div className="app__body" inert={isAndroid && (mobileBlocked || !!reading)}>
       {error && <div className="banner banner--error">{error}</div>}
-      {matchNotice != null && hasLib && !isAndroid && (
+      {matchNotice != null && hasLib && (
         <div className="banner banner--info">
           <span>{t.matchNotice.replace("{0}", String(matchNotice))}</span>
           <button
             className="linkbtn"
             onClick={() => {
               setOnlyMatches(true);
+              if (isAndroid) { setMobileTab("library"); setMobileSource("all"); setStatusFilter(null); setQuery(""); }
               setShowStats(false);
               setShowVocab(false);
               setMatchNotice(null);
@@ -661,6 +681,7 @@ export default function App() {
 
       {isAndroid && hasLib && !reading && !showStats && mobileTab === "home" && (
         <MobileHome
+          onSync={auth === "in" ? startSync : undefined} syncing={busy === t.syncing} syncBusy={!!busy} progress={progress}
           rows={visible} lang={lang} summary={stats.summary}
           onRead={(r) => actions.read(r, null)} onDetail={(r) => actions.details(r, null)}
           onStats={() => { setShowStats(true); stats.refresh(); }}
@@ -671,6 +692,8 @@ export default function App() {
       )}
       {isAndroid && hasLib && !reading && !showStats && mobileTab === "library" && (
         <MobileLibrary
+          onSync={auth === "in" ? startSync : undefined} syncing={busy === t.syncing} syncBusy={!!busy} progress={progress}
+          matchFilter={onlyMatches} onClearMatches={() => setOnlyMatches(false)}
           rows={shown} total={visible.length} mixed={mixedSources} lang={lang}
           query={query} setQuery={setQuery} sort={sort} setSort={setSort}
           status={statusFilter} setStatus={setStatusFilter}
@@ -685,6 +708,7 @@ export default function App() {
           lang={lang} setLang={setLang} theme={theme} setTheme={setTheme}
           goal={stats.summary?.goal_minutes ?? 10} onChanged={stats.refresh}
           onLocalLibrary={() => setShowLocalLib(true)} deviceName={account?.device_name}
+          signedIn={auth === "in"} busy={!!busy} onSignIn={doLogin} onSignOut={() => setAskLogout(true)}
         />
       )}
 
@@ -909,6 +933,7 @@ export default function App() {
       {reading && (
         <Reader
           row={reading}
+          signedIn={auth === "in"}
           lang={lang}
           theme={theme}
           todaySec={stats.summary ? stats.summary.today_app_sec + stats.summary.today_kindle_sec : 0}

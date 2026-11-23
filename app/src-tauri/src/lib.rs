@@ -64,11 +64,15 @@ pub fn run() {
             let db_path = data_dir.join("pinknbook.sqlite");
             let database = db::Db::open(&db_path)?;
             app.manage(database);
+            #[cfg(target_os = "android")]
+            app.manage(commands::MobileLogin::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::auth_status,
             commands::login,
+            commands::complete_mobile_login,
+            commands::cancel_mobile_login,
             commands::logout,
             commands::guest_status,
             commands::set_guest,
@@ -141,6 +145,7 @@ pub fn run() {
             goodreads::goodreads_choose,
             goodreads::goodreads_reset,
             goodreads::goodreads_translate,
+            goodreads::goodreads_save_translation,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

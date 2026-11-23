@@ -1,3 +1,5 @@
+import { MobilePicker } from "./mobile/MobilePicker";
+import { isAndroid } from "./platform";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { STR, type Lang } from "./i18n";
@@ -564,7 +566,7 @@ function XRayDetail({
           </button>
         </div>
         <div className="xr__meta">
-          <select
+          {isAndroid ? <MobilePicker label={t.mobileEntityType} value={e.type} options={(["person", "place", "org", "term"] as const).map((k) => ({ value: k, label: t[`xr_${k}` as const] }))} onChange={(type) => x.setEdits((ed) => ({ ...ed, types: { ...ed.types, [e.key]: type } }))} /> : (<select
             className="select"
             value={e.type}
             onChange={(ev) => x.setEdits((ed) => ({ ...ed, types: { ...ed.types, [e.key]: ev.target.value as XrType } }))}
@@ -574,7 +576,7 @@ function XRayDetail({
                 {t[`xr_${k}` as const]}
               </option>
             ))}
-          </select>
+          </select>)}
           <span>{t.xrTimes.replace("{0}", String(ms.length))}</span>
           {ms[0] && <span>· {t.xrFirstSeen} {formatPos(ms[0][4])}</span>}
         </div>
@@ -621,7 +623,7 @@ function XRayDetail({
               )}
             </span>
           ))}
-          <select
+          {isAndroid ? <MobilePicker label={t.xrMergeInto} value="" options={[{ value: "", label: t.xrMergeInto }, ...others.map((o) => ({ value: o.key, label: o.name }))]} onChange={(to) => { if (!to) return; x.setEdits((ed) => { const merges = { ...ed.merges }; for (const f of e.forms) merges[f] = to; return { ...ed, merges }; }); onSelect(to); }} /> : (<select
             className="select xr__merge"
             value=""
             onChange={(ev) => {
@@ -641,7 +643,7 @@ function XRayDetail({
                 {o.name}
               </option>
             ))}
-          </select>
+          </select>)}
         </div>
 
         {e.type === "person" && (

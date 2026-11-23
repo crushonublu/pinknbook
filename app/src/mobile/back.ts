@@ -3,19 +3,20 @@ import { exit, onBackButtonPress } from "@tauri-apps/api/app";
 import { isAndroid } from "../platform";
 
 // Nested mobile UI consumes Back before App handles its navigation state.
-export function useMobileDismiss(open: boolean, close: () => void) {
+export function useMobileDismiss(open: boolean, close: () => void, priority = false) {
   const latest = useRef(close);
   latest.current = close;
   useEffect(() => {
     if (!open) return;
-    const back = (e: Event) => { e.preventDefault(); latest.current(); };
+    const back = (e: Event) => { e.preventDefault(); if (priority) e.stopImmediatePropagation(); latest.current(); };
     const key = (e: KeyboardEvent) => {
+      if (!priority && document.querySelector("[data-mobile-picker]")) return;
       if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); latest.current(); }
     };
-    window.addEventListener("mobile-dismiss", back);
+    window.addEventListener("mobile-dismiss", back, priority);
     window.addEventListener("keydown", key, true);
-    return () => { window.removeEventListener("mobile-dismiss", back); window.removeEventListener("keydown", key, true); };
-  }, [open]);
+    return () => { window.removeEventListener("mobile-dismiss", back, priority); window.removeEventListener("keydown", key, true); };
+  }, [open, priority]);
 }
 
 export function useAndroidBack(back: () => boolean, onError: (e: string) => void) {

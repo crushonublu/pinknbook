@@ -50,7 +50,9 @@
 .is-android .mr-sheet .rside__head[hidden] { display: none; }
 .is-android .mr-sheet .rside__tabs { width: 100%; padding: 4px; border-radius: 12px; background: #1e222b; }
 .is-android .mr-sheet .rside__tabs button { min-height: 36px; flex: 1; min-width: 0; padding: 4px; gap: 3px; }
-.is-android .mr-sheet .rside__tablabel { display: inline; overflow: visible; max-width: none; font-size: 12px; }
+.is-android .mr-sheet .rside__tablabel { display: inline; overflow: visible; max-width: none; margin-left: 0; opacity: 1; transform: none; transition: none; font-size: 12px; }
+.is-android .mr-sheet .rside__tabs button { flex-grow: 1; color: var(--r-muted); transition: background-color .2s, color .2s; }
+.is-android .mr-sheet .rside__tabs button.is-on { color: var(--r-fg); }
 .is-android .mr-sheet .rside__tabs .icon { display: none; }
 .is-android .mr-sheet .rside__tabs button.is-on { background: #2f3440; }
 .is-android .mr-sheet .rside__body { padding: 0 0 16px; animation: none; }

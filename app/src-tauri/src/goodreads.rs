@@ -668,6 +668,26 @@ pub async fn goodreads_translate(app: AppHandle, text: String, target: String) -
     Ok(out)
 }
 
+/// Store a translation the app fetched itself (Android translates through
+/// its WebView when Google rate-limits this client), so it is not fetched again.
+#[tauri::command]
+pub fn goodreads_save_translation(db: State<Db>, text: String, target: String, translated: String, lang: Option<String>) -> Result<(), String> {
+    if target != "vi" && target != "en" {
+        return Err("unsupported language".into());
+    }
+    let (text, translated) = (text.trim().to_string(), translated.trim().to_string());
+    if text.is_empty() || translated.is_empty() {
+        return Ok(());
+    }
+    let conn = db.0.lock().unwrap();
+    conn.execute(
+        "INSERT OR REPLACE INTO gr_translation (source, target, text, lang) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![text, target, translated, lang],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Error text the UI recognises: Google is limiting requests for a while.
 const RATE_LIMITED: &str = "rate_limited";
 

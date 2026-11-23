@@ -104,7 +104,7 @@ export function ReaderSidebar({
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       // The relationship map, when open, takes Escape first.
-      if (e.key === "Escape" && !document.querySelector(".xrg")) {
+      if (e.key === "Escape" && !document.querySelector(".xrg, [data-mobile-picker]")) {
         e.stopImmediatePropagation();
         onClose();
       }
@@ -204,7 +204,7 @@ export function ReaderSidebar({
                 ))}
               </ul>
             ) : (
-              <p className="rside__empty">{t.noBookmarks}</p>
+              <p className="rside__empty">{isAndroid ? t.noBookmarksMobile : t.noBookmarks}</p>
             ))}
 
           {tab === "notes" && (

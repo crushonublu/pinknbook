@@ -1,3 +1,4 @@
+import { MobilePicker } from "./MobilePicker";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 import BookDetail from "../BookDetail";
 import { BookCover } from "../BookCover";
@@ -21,7 +22,7 @@ export default function MobileBookSheet({ row, lang, onClose, onRead, onEdit, on
     const previous = document.activeElement as HTMLElement | null;
     close.current?.focus();
     const key = (e: KeyboardEvent) => {
-      if (document.querySelector(".modal")) return;
+      if (document.querySelector(".modal, [data-mobile-picker]")) return;
       if (e.key === "Escape") {
         e.stopImmediatePropagation();
         const cancel = sheet.current?.querySelector<HTMLButtonElement>(".gr__pickactions button:last-child");
@@ -49,7 +50,7 @@ export default function MobileBookSheet({ row, lang, onClose, onRead, onEdit, on
       {menu && <div className="mobile-sheet__menu" role="menu"><button role="menuitem" onClick={() => { setMenu(false); onEdit(); }}>{t.customize}</button>{onRemove && <button role="menuitem" onClick={() => { setMenu(false); onRemove(); }}>{t.removeBook}</button>}{twin && <><button role="menuitem" onClick={() => { setMenu(false); row.linked_asin ? onUnlink?.() : onLink?.(); }}>{row.linked_asin ? t.unlinkBtn : t.linkBtn}</button>{!row.linked_asin && <button role="menuitem" onClick={() => { setMenu(false); onDismissLink?.(); }}>{t.linkNot}</button>}</>}</div>}
       <div className="mobile-sheet__body"><div className="mobile-sheet__cover"><BookCover row={row} /></div><h2>{row.title}</h2><p className="mobile-sheet__author">{row.author || t.noAuthor}</p>
         <div className="mobile-sheet__stats"><div><b>{rating != null ? `★ ${new Intl.NumberFormat(lang, { maximumFractionDigits: 2 }).format(rating)}` : "—"}</b><small>{t.mobileGoodreads}</small></div><div><b>{percent(row)}%</b><small>{t.progressDone}</small></div><div><b>{gr.st?.book?.pages ?? "—"}</b><small>{t.grPages}</small></div></div>
-        <label className="mobile-sheet__status"><span className="muted">{t.status}</span><select className="select" aria-label={t.status} value={row.status_manual ? row.status : "auto"} onChange={(e) => onStatus(e.target.value === "auto" ? null : e.target.value as ReadStatus)}><option value="auto">{t.statusAuto} ({statusLabel(t, (row.percent ?? 0) >= 97.5 ? "finished" : (row.percent ?? 0) > .5 ? "reading" : "unread")})</option>{STATUS_ORDER.map((s) => <option key={s} value={s}>{statusLabel(t, s)}</option>)}</select></label>
+        <div className="mobile-sheet__status"><span className="muted">{t.status}</span><MobilePicker label={t.status} value={row.status_manual ? row.status : "auto"} options={[{ value: "auto", label: `${t.statusAuto} (${statusLabel(t, (row.percent ?? 0) >= 97.5 ? "finished" : (row.percent ?? 0) > .5 ? "reading" : "unread")})` }, ...STATUS_ORDER.map((s) => ({ value: s, label: statusLabel(t, s) }))]} onChange={(s) => onStatus(s === "auto" ? null : s as ReadStatus)} /></div>
         {twin && <p className="muted">{row.linked_asin ? t.kindleTwin : t.linkSuggest}: {twin.title}</p>}
         {description && <section><h3>{t.about}</h3><p className={expanded ? "mobile-description is-open" : "mobile-description"}>{description}</p><button className="linkbtn" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? t.showLess : t.showMore}</button></section>}
         {!!row.subjects.length && <div className="tags">{row.subjects.map((tag) => <span className="tag" key={tag}>{tag}</span>)}</div>}

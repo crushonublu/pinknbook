@@ -46,6 +46,7 @@ export function ReaderSettings({
       if (ref.current && !ref.current.contains(target) && !target?.closest("[data-settings-toggle]")) onClose();
     };
     const key = (e: KeyboardEvent) => {
+      if (isAndroid && document.querySelector("[data-mobile-picker]")) return;
       if (e.key === "Escape") {
         e.stopImmediatePropagation();
         onClose();

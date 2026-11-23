@@ -1,3 +1,5 @@
+import { MobilePicker } from "./mobile/MobilePicker";
+import { isAndroid } from "./platform";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { STR, type Lang } from "./i18n";
@@ -221,13 +223,13 @@ export function StatsPage({
         <span className="editor__spacer" />
         <label className="stats__goal">
           <span>{t.dailyGoal}</span>
-          <select className="select" value={goal} onChange={(e) => setSettings({ goalMinutes: Number(e.target.value) })}>
+          {isAndroid ? <MobilePicker label={t.dailyGoal} value={goal} options={[5, 10, 15, 20, 30, 45, 60, 90, 120].map((g) => ({ value: g, label: t.minutesN.replace("{0}", String(g)) }))} onChange={(g) => setSettings({ goalMinutes: g })} /> : (<select className="select" value={goal} onChange={(e) => setSettings({ goalMinutes: Number(e.target.value) })}>
             {[5, 10, 15, 20, 30, 45, 60, 90, 120].map((g) => (
               <option key={g} value={g}>
                 {t.minutesN.replace("{0}", String(g))}
               </option>
             ))}
-          </select>
+          </select>)}
         </label>
         <label className="stats__toggle" title={t.kindleEstHint}>
           <input type="checkbox" checked={s.kindle_estimates} onChange={(e) => setSettings({ kindleEstimates: e.target.checked })} />
