@@ -26,7 +26,8 @@
 .wc-tile__l { font-size: 38px; color: var(--sc-sub); }
 
 /* Covers (a book's image, or the typographic cover in its spine colour). */
-.wc-cover { width: 100%; aspect-ratio: 2 / 3; border-radius: 10px; box-shadow: 0 22px 44px rgba(0, 0, 0, .4); }
+/* `.wc` in front: the generic `.cover` (App.css) can come later in the bundle and must not win. */
+.wc .wc-cover { width: 100%; aspect-ratio: 2 / 3; border-radius: 10px; box-shadow: 0 22px 44px rgba(0, 0, 0, .4); }
 .wc-cover.cover--type { padding: 12% 10% 12% 14%; gap: calc(var(--wc-cw, 200px) * .05); }
 .wc-cover .cover--type__title, .wc-cover.cover--type .cover--type__title { font-size: calc(var(--wc-cw, 200px) * .105); }
 .wc-cover .cover--type__author { font-size: calc(var(--wc-cw, 200px) * .075); }
@@ -53,7 +54,7 @@
 .wc-hero__num small { margin-left: 24px; font-size: 70px; font-weight: 600; color: var(--sc-hi); }
 .wc-hero__label { font-size: 44px; color: var(--sc-sub); }
 .wc-book { flex-direction: row; align-items: center; justify-content: flex-start; gap: 44px; }
-.wc-book__cover { flex: none; width: 250px; --wc-cw: 250px; }
+.wc .wc-book__cover { flex: none; width: 250px; --wc-cw: 250px; }
 /* Percent padding counts the band's width here, not the cover's: set it in pixels. */
 .wc-book__cover.cover--type { padding: 34px 26px 34px 36px; }
 .wc-book__text { display: flex; flex-direction: column; gap: 10px; width: 440px; min-width: 0; }
@@ -102,7 +103,7 @@
 .wc--post .wc-hero__num small { font-size: 60px; }
 .wc--post .wc-hero__label { font-size: 38px; }
 .wc--post .wc__line p { font-size: 44px; }
-.wc--post .wc-book__cover { width: 180px; --wc-cw: 180px; }
+.wc--post .wc-book .wc-book__cover { width: 180px; --wc-cw: 180px; }
 .wc--post .wc-book__cover.cover--type { padding: 24px 18px 24px 26px; }
 .wc--post .wc-book__title { font-size: 48px; }
 .wc--post .wc-book__author, .wc--post .wc-book__time { font-size: 34px; }
