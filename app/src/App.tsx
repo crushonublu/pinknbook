@@ -23,7 +23,7 @@ import { WindowControls } from "./WindowControls";
 import { isAndroid } from "./platform";
 import { Icon } from "./icons";
 import { KindlePushDialog, wantsKindlePush, type KindlePushRequest } from "./KindlePush";
-import { SendDialog, useSendQueue } from "./SendToKindle";
+import { MobileSendSheet, SendDialog, useSendQueue } from "./SendToKindle";
 import {
   AddDropOverlay,
   ConfirmDialog,
@@ -122,6 +122,29 @@ export default function App() {
   });
   const localImportRef = useRef(localImport);
   localImportRef.current = localImport;
+  const sendQueueRef = useRef(sendQueue);
+  sendQueueRef.current = sendQueue;
+
+  // Android "Share → pntome" with EPUBs: signed in, they go to Send to Kindle;
+  // as a guest, into the library on this phone. Shared before the library is
+  // open, they wait until it is.
+  useEffect(() => {
+    if (!isAndroid || (auth !== "in" && auth !== "guest")) return;
+    const take = () =>
+      invoke<string[]>("shared_files_take")
+        .then((uris) => {
+          if (!uris.length) return;
+          if (auth === "in") {
+            setShowSend(true);
+            return sendQueueRef.current.add(uris);
+          }
+          localImportRef.current.add(uris);
+        })
+        .catch((e) => setError(String(e)));
+    take();
+    window.addEventListener("pntome-share", take);
+    return () => window.removeEventListener("pntome-share", take);
+  }, [auth]);
   const [askLogout, setAskLogout] = useState(false);
   const [showLocalLib, setShowLocalLib] = useState(false);
   /** After a sync: how many local books look like a Kindle book (offer to link). */
@@ -411,6 +434,8 @@ export default function App() {
     try {
       const info = await invoke<{ path: string } | null>("local_book_info", { asin: row.asin });
       if (!info) return;
+      // On a phone the dialog takes the screen: the book's sheet goes.
+      if (isAndroid) setDetailAsin(null);
       setShowSend(true);
       await sendQueue.add([info.path]);
     } catch (e) {
@@ -719,7 +744,7 @@ export default function App() {
         <MobileAccount
           lang={lang} setLang={setLang} theme={theme} setTheme={setTheme}
           goal={stats.summary?.goal_minutes ?? 10} onChanged={stats.refresh}
-          onLocalLibrary={() => setShowLocalLib(true)} deviceName={account?.device_name}
+          onLocalLibrary={() => setShowLocalLib(true)} onSendToKindle={() => setShowSend(true)} deviceName={account?.device_name}
           signedIn={auth === "in"} busy={!!busy} onSignIn={doLogin} onSignOut={() => setAskLogout(true)}
         />
       )}
@@ -895,7 +920,9 @@ export default function App() {
         />
       )}
       {wrapOpen && <WrapViewer lang={lang} kind={wrapOpen.kind} periodStart={wrapOpen.period_start} summary={stats.summary} onClose={() => setWrapOpen(null)} />}
-      {showSend && auth === "in" && <SendDialog lang={lang} queue={sendQueue} onClose={() => setShowSend(false)} />}
+      {showSend && auth === "in" && (isAndroid
+        ? <MobileSendSheet lang={lang} queue={sendQueue} onClose={() => setShowSend(false)} />
+        : <SendDialog lang={lang} queue={sendQueue} onClose={() => setShowSend(false)} />)}
       {dragging && <AddDropOverlay lang={lang} />}
       {!reading && (localImport.state.progress || localImport.state.results) && (
         <ImportToast

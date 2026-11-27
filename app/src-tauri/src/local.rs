@@ -216,21 +216,29 @@ pub(crate) fn import_one(app: &AppHandle, path: &Path) -> ImportResult {
     }
 }
 
-/// A content:// URI (Android): read it through the fs plugin. Its last
-/// segment, decoded, is the closest thing to a file name it has.
-fn import_uri(app: &AppHandle, uri: &str) -> ImportResult {
-    use tauri_plugin_fs::FsExt;
+/// The last segment of a content:// URI, decoded: the closest thing to a file
+/// name it has without asking its provider.
+pub(crate) fn uri_name(uri: &str) -> String {
     let tail = uri.rsplit('/').next().unwrap_or(uri);
     let decoded = url::form_urlencoded::parse(format!("x={tail}").as_bytes())
         .next()
         .map(|(_, v)| v.into_owned())
         .unwrap_or_else(|| tail.to_string());
-    let name = decoded.rsplit(['/', ':']).next().unwrap_or(&decoded).to_string();
-    let read = uri
-        .parse::<tauri_plugin_fs::FilePath>()
+    decoded.rsplit(['/', ':']).next().unwrap_or(&decoded).to_string()
+}
+
+/// The bytes behind a content:// URI (Android), read through the fs plugin.
+pub(crate) fn read_uri(app: &AppHandle, uri: &str) -> Result<Vec<u8>, String> {
+    use tauri_plugin_fs::FsExt;
+    uri.parse::<tauri_plugin_fs::FilePath>()
         .map_err(|e| e.to_string())
-        .and_then(|fp| app.fs().read(fp).map_err(|e| e.to_string()));
-    match read {
+        .and_then(|fp| app.fs().read(fp).map_err(|e| e.to_string()))
+}
+
+/// A content:// URI (Android): read it through the fs plugin.
+fn import_uri(app: &AppHandle, uri: &str) -> ImportResult {
+    let name = uri_name(uri);
+    match read_uri(app, uri) {
         Ok(bytes) => import_bytes(app, &bytes, uri.to_string(), name),
         Err(e) => ImportResult {
             path: uri.to_string(),

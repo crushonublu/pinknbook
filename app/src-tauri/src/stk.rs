@@ -14,7 +14,7 @@ use std::io::{Cursor, Read, Write};
 use base64::Engine;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::adp::{client, sign};
 use crate::creds;
@@ -346,16 +346,107 @@ fn prepare(path: &str, title: &str, author: &str, cover_path: Option<&str>) -> R
     Ok(out.finish().map_err(|e| e.to_string())?.into_inner())
 }
 
+// ---- Files from Android ---------------------------------------------------------
+
+/// Copies of content:// files are kept this long (seconds), for a send that is
+/// still going or waiting to be retried.
+const STAGE_KEEP_SECS: u64 = 24 * 3600;
+
+/// The name a content:// URI's provider gives its file ("Book.epub"), when it gives one.
+#[cfg(target_os = "android")]
+async fn content_name(app: &AppHandle, uri: &str) -> Option<String> {
+    let uri = uri.to_string();
+    let name = crate::android::on_activity(app, move |env, activity| {
+        let arg = env.new_string(uri)?;
+        crate::android::call_string(env, activity, "contentDisplayName", "(Ljava/lang/String;)Ljava/lang/String;", &[(&arg).into()])
+    })
+    .await
+    .ok()?;
+    (!name.is_empty()).then_some(name)
+}
+
+#[cfg(not(target_os = "android"))]
+async fn content_name(_app: &AppHandle, _uri: &str) -> Option<String> {
+    None
+}
+
+/// A file name that is safe to create: no folders, nothing reserved, never empty.
+fn safe_file_name(name: &str) -> String {
+    let clean: String = name.chars().map(|c| if c.is_control() || r#"/\:*?"<>|"#.contains(c) { '_' } else { c }).collect();
+    let clean = clean.trim().trim_start_matches('.').to_string();
+    if clean.is_empty() { "book.epub".into() } else { clean }
+}
+
+/// Android's file picker and other apps' "Share" hand out content:// URIs, not
+/// paths: such a file is copied into the cache (`stk/<n>/<its name>`) and that
+/// copy is what is checked and sent. A path is returned as it is. Old copies
+/// are cleared on the way.
+async fn stage(app: &AppHandle, path: &str) -> Result<String, String> {
+    if !path.starts_with("content://") {
+        return Ok(path.to_string());
+    }
+    let name = safe_file_name(&content_name(app, path).await.unwrap_or_else(|| crate::local::uri_name(path)));
+    let root = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("stk");
+    let (app2, uri) = (app.clone(), path.to_string());
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(dirs) = std::fs::read_dir(&root) {
+            for d in dirs.flatten() {
+                let old = d.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok());
+                if old.is_some_and(|age| age.as_secs() > STAGE_KEEP_SECS) {
+                    let _ = std::fs::remove_dir_all(d.path());
+                }
+            }
+        }
+        let bytes = crate::local::read_uri(&app2, &uri)?;
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        let dir = root.join(format!("{nanos:x}"));
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let file = dir.join(name);
+        std::fs::write(&file, bytes).map_err(|e| e.to_string())?;
+        Ok(file.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// EPUBs that other apps shared to this one (Android "Share → pntome") and not
+/// yet taken: content:// URIs for `epub_inspect`. Empty elsewhere.
 #[tauri::command]
-pub async fn epub_inspect(paths: Vec<String>) -> Result<Vec<EpubInfo>, String> {
-    tauri::async_runtime::spawn_blocking(move || paths.iter().map(|p| inspect(p)).collect())
+pub async fn shared_files_take(app: AppHandle) -> Result<Vec<String>, String> {
+    #[cfg(target_os = "android")]
+    {
+        let reply = crate::android::on_activity(&app, |env, activity| {
+            crate::android::call_string(env, activity, "takeSharedFiles", "()Ljava/lang/String;", &[])
+        })
+        .await?;
+        serde_json::from_str(&reply).map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(vec![])
+    }
+}
+
+#[tauri::command]
+pub async fn epub_inspect(app: AppHandle, paths: Vec<String>) -> Result<Vec<EpubInfo>, String> {
+    let mut staged = Vec::with_capacity(paths.len());
+    for p in &paths {
+        match stage(&app, p).await {
+            Ok(s) => staged.push(s),
+            // Unreadable: shown as "not an EPUB", under the name it came with.
+            Err(_) => staged.push(p.clone()),
+        }
+    }
+    tauri::async_runtime::spawn_blocking(move || staged.iter().map(|p| inspect(p)).collect())
         .await
         .map_err(|e| e.to_string())
 }
 
 /// Preview of a cover picture the user picked.
 #[tauri::command]
-pub async fn image_preview(path: String) -> Result<String, String> {
+pub async fn image_preview(app: AppHandle, path: String) -> Result<String, String> {
+    let path = stage(&app, &path).await?;
     tauri::async_runtime::spawn_blocking(move || {
         let b = std::fs::read(&path).map_err(|e| e.to_string())?;
         thumb_data_url(&b).ok_or_else(|| "not an image".to_string())
@@ -443,6 +534,10 @@ pub async fn stk_send(
         let _ = app.emit("stk-progress", Progress { job: &job, phase, done, total });
     };
     emit("prepare", 0, 0);
+    let cover_path = match cover_path {
+        Some(c) => Some(stage(&app, &c).await?),
+        None => None,
+    };
     let (p, t, a, c) = (path.clone(), title.clone(), author.clone(), cover_path.clone());
     let data = tauri::async_runtime::spawn_blocking(move || prepare(&p, &t, &a, c.as_deref()))
         .await

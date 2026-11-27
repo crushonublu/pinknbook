@@ -114,6 +114,7 @@ pub fn run() {
             stk::image_preview,
             stk::stk_devices,
             stk::stk_send,
+            stk::shared_files_take,
             stats::log_reading,
             stats::kindle_activity_tick,
             kindle_app::kindle_usage_status,

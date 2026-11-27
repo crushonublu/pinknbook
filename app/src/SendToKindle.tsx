@@ -5,6 +5,8 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { STR, type Lang } from "./i18n";
 import type { LibraryRow } from "./types";
 import { Icon } from "./icons";
+import { isAndroid } from "./platform";
+import { MobileReaderSheet } from "./mobile/MobileReaderSheet";
 
 /** What Rust reports about a picked file (src-tauri/src/stk.rs). */
 interface EpubInfo {
@@ -101,7 +103,10 @@ export function useSendQueue(onArrived: () => void) {
   }, [patch]);
 
   async function add(paths: string[]) {
-    const fresh = paths.filter(isEpub).filter((p) => !itemsRef.current.some((x) => x.info.path === p && x.status.k !== "done"));
+    // Android hands out content:// URIs, often without the file name: Rust copies and checks them.
+    const fresh = paths
+      .filter((p) => isEpub(p) || p.startsWith("content://"))
+      .filter((p) => !itemsRef.current.some((x) => x.info.path === p && x.status.k !== "done"));
     if (!fresh.length) return;
     const infos = await invoke<EpubInfo[]>("epub_inspect", { paths: fresh });
     setItems((list) => [
@@ -220,8 +225,12 @@ function fmtSize(n: number) {
   return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 }
 
-/** The "Send to Kindle" dialog: queue, metadata, devices. */
-export function SendDialog({ lang, queue, onClose }: { lang: Lang; queue: Queue; onClose: () => void }) {
+/**
+ * What both Send to Kindle views share: the devices Amazon offers (the app's
+ * own registrations hidden unless asked for), the ones picked (remembered),
+ * the file and cover pickers, and sending.
+ */
+function useSendForm(lang: Lang, queue: Queue) {
   const t = STR[lang];
   const [devices, setDevices] = useState<StkDevice[] | null>(null);
   const [devErr, setDevErr] = useState<string | null>(null);
@@ -238,17 +247,6 @@ export function SendDialog({ lang, queue, onClose }: { lang: Lang; queue: Queue;
       })
       .catch((e) => setDevErr(String(e)));
   }, []);
-
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopImmediatePropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
-  }, [onClose]);
 
   async function pickFiles() {
     const r = await openDialog({ multiple: true, filters: [{ name: "EPUB", extensions: ["epub"] }] });
@@ -272,12 +270,164 @@ export function SendDialog({ lang, queue, onClose }: { lang: Lang; queue: Queue;
   const ready = queue.items.filter((x) => x.status.k === "ready" && x.title.trim()).length;
   const shown = (devices ?? []).filter((d) => showApp || !d.app_made || picked.includes(d.serial));
   const hiddenCount = (devices ?? []).filter((d) => d.app_made).length;
+  const devNote = picked.length ? t.stkDevNote : firstTime.current ? t.stkDevFirst : t.stkDevNone;
 
   function send() {
     saveDevices(picked);
     firstTime.current = false;
     queue.sendAll(picked);
   }
+
+  return { devices, devErr, picked, toggle, showApp, setShowApp, shown, hiddenCount, devNote, ready, pickFiles, pickCover, send };
+}
+
+/**
+ * Device names as Amazon gives them carry the account's name ("Hieu's Kindle
+ * for PC"); when every one of them starts the same way, that part is left out
+ * so the list reads "Kindle for PC", "2nd Android Device"…
+ */
+function shortDeviceNames(devices: StkDevice[]): Map<string, string> {
+  const owner = (n: string) => /^(.+?'s )/.exec(n)?.[1];
+  const owners = new Set(devices.map((d) => owner(d.name)).filter(Boolean));
+  const prefix = owners.size === 1 ? [...owners][0]! : null;
+  return new Map(devices.map((d) => [d.serial, prefix && d.name.startsWith(prefix) ? d.name.slice(prefix.length) : d.name]));
+}
+
+/** Android: the Send to Kindle sheet, laid out for a phone. */
+export function MobileSendSheet({ lang, queue, onClose }: { lang: Lang; queue: Queue; onClose: () => void }) {
+  const t = STR[lang];
+  const f = useSendForm(lang, queue);
+  const names = shortDeviceNames(f.devices ?? []);
+  const hasItems = queue.items.length > 0;
+  return (
+    <div className="mobile-stk-sheet">
+      <MobileReaderSheet title={t.stkTitle} closeLabel={t.closeReader} onClose={onClose}>
+        {hasItems ? (
+          <div className="mstk__list">
+            {queue.items.map((it) => (
+              <MobileQueueRow key={it.id} lang={lang} it={it} queue={queue} onCover={() => f.pickCover(it)} />
+            ))}
+            <button className="mstk__add" onClick={f.pickFiles}>
+              <Icon name="plus" size={16} />
+              {t.stkAdd}
+            </button>
+          </div>
+        ) : (
+          <button className="mstk__empty" onClick={f.pickFiles}>
+            <span className="mstk__empty-icon"><Icon name="upload" size={26} /></span>
+            <b>{t.stkEmptyMobile}</b>
+            <small>{t.stkSub}</small>
+          </button>
+        )}
+
+        <section className="mstk__devices">
+          <h3>{t.stkDevices}</h3>
+          {f.devErr ? (
+            <p className="mstk__err">{t.stkDevErr}</p>
+          ) : f.devices == null ? (
+            <p className="mstk__note">{t.loading}</p>
+          ) : (
+            <div className="mobile-group">
+              {f.shown.map((d) => {
+                const on = f.picked.includes(d.serial);
+                return (
+                  <button key={d.serial} className={`mobile-setting mstk__dev${on ? " is-on" : ""}`} role="checkbox" aria-checked={on} onClick={() => f.toggle(d.serial)}>
+                    <span>{names.get(d.serial)}</span>
+                    <span className="mstk__check" aria-hidden="true">{on && <Icon name="check" size={16} />}</span>
+                  </button>
+                );
+              })}
+              {f.hiddenCount > 0 && (
+                <button className="mobile-setting mstk__more" onClick={() => f.setShowApp((v) => !v)}>
+                  <span>{f.showApp ? t.stkHideApp : t.stkShowApp.replace("{0}", String(f.hiddenCount))}</span>
+                </button>
+              )}
+            </div>
+          )}
+          <p className="mstk__note">{f.devNote}</p>
+        </section>
+
+        <footer className="mstk__foot">
+          {queue.items.some((x) => x.status.k === "done") && (
+            <button className="stk__link" onClick={queue.clearFinished}>{t.stkClearDone}</button>
+          )}
+          <button className="btn btn--primary mstk__send" onClick={f.send} disabled={!f.ready}>
+            {f.ready ? t.stkSend.replace("{0}", String(f.ready)) : t.stkTitle}
+          </button>
+        </footer>
+      </MobileReaderSheet>
+    </div>
+  );
+}
+
+/** One book in the phone sheet: cover (tap to change), title and author edited in place, its progress. */
+function MobileQueueRow({ lang, it, queue, onCover }: { lang: Lang; it: SendItem; queue: Queue; onCover: () => void }) {
+  const t = STR[lang];
+  const s = it.status;
+  const editable = s.k === "ready" || s.k === "error" || s.k === "invalid";
+  const cover = it.coverPreview ?? it.info.cover;
+  const pct = s.k === "upload" && s.total ? Math.round((s.done / s.total) * 100) : null;
+  const problems = it.info.problems.filter((p) => p !== "no_title" || !it.title.trim());
+  const line = statusLine(t, s, pct);
+  return (
+    <div className={`mstk__item mstk__item--${s.k}`}>
+      <button className="mstk__cover" onClick={onCover} disabled={!editable} aria-label={t.stkCover}>
+        {cover ? <img src={cover} alt="" /> : <Icon name="book" size={22} />}
+        {editable && <span className="mstk__cover-edit"><Icon name="edit" size={12} /></span>}
+      </button>
+      <div className="mstk__fields">
+        <input className="mstk__title" value={it.title} onChange={(e) => queue.patch(it.id, { title: e.target.value })} placeholder={t.stkTitleField} aria-label={t.stkTitleField} disabled={!editable} />
+        <input className="mstk__author" value={it.author} onChange={(e) => queue.patch(it.id, { author: e.target.value })} placeholder={t.stkAuthorField} aria-label={t.stkAuthorField} disabled={!editable} />
+        <span className="mstk__meta">{fmtSize(it.info.size)}{it.coverPath ? ` · ${t.stkNewCover}` : ""}</span>
+        {problems.length > 0 && <span className="mstk__problems">{problems.map((p) => t[`stkP_${p}` as keyof typeof t] ?? p).join(" · ")}</span>}
+        {line && (
+          <span className="mstk__status">
+            {(s.k === "prepare" || s.k === "send" || s.k === "converting") && <Icon name="refresh" size={13} className="icon--spin" />}
+            {s.k === "done" && <Icon name="check" size={14} />}
+            <span>{line}</span>
+            {(s.k === "error" || s.k === "timeout") && <button className="stk__link" onClick={() => queue.retry(it.id)}>{t.kpushRetry}</button>}
+          </span>
+        )}
+        {s.k === "upload" && <div className="stk__bar"><div style={{ width: `${pct ?? 0}%` }} /></div>}
+      </div>
+      {(editable || s.k === "done" || s.k === "timeout") && (
+        <button className="mstk__remove" onClick={() => queue.remove(it.id)} aria-label={t.stkRemove}>
+          <Icon name="close" size={16} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The words for where a book is in the send, if any. */
+function statusLine(t: (typeof STR)[Lang], s: Status, pct: number | null): string | null {
+  switch (s.k) {
+    case "prepare": return t.stkPrepare;
+    case "upload": return t.stkUploading.replace("{0}", String(pct ?? 0));
+    case "send": return t.stkSending;
+    case "converting": return t.stkConverting;
+    case "done": return t.stkDone;
+    case "timeout": return t.stkTimeout;
+    case "error": return `${t.stkError}: ${s.msg}`;
+    default: return null;
+  }
+}
+
+/** The "Send to Kindle" dialog: queue, metadata, devices. */
+export function SendDialog({ lang, queue, onClose }: { lang: Lang; queue: Queue; onClose: () => void }) {
+  const t = STR[lang];
+  const { devErr, devices, showApp, setShowApp, shown, hiddenCount, picked, toggle, devNote, ready, pickFiles, pickCover, send } = useSendForm(lang, queue);
+
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopImmediatePropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, [onClose]);
 
   return (
     <div className="modal" onMouseDown={onClose}>
@@ -300,7 +450,7 @@ export function SendDialog({ lang, queue, onClose }: { lang: Lang; queue: Queue;
           {queue.items.length === 0 && (
             <button className="stk__empty" onClick={pickFiles}>
               <Icon name="upload" size={28} />
-              <span>{t.stkEmpty}</span>
+              <span>{isAndroid ? t.stkEmptyMobile : t.stkEmpty}</span>
             </button>
           )}
           {queue.items.map((it) => (
@@ -331,9 +481,7 @@ export function SendDialog({ lang, queue, onClose }: { lang: Lang; queue: Queue;
               ))}
             </div>
           )}
-          <p className="muted small stk__devnote">
-            {picked.length ? t.stkDevNote : firstTime.current ? t.stkDevFirst : t.stkDevNone}
-          </p>
+          <p className="muted small stk__devnote">{devNote}</p>
         </section>
 
         <footer className="stk__foot">
@@ -363,14 +511,7 @@ function QueueRow({ lang, it, queue, onCover }: { lang: Lang; it: SendItem; queu
   const pct = s.k === "upload" && s.total ? Math.round((s.done / s.total) * 100) : null;
   const problems = it.info.problems.filter((p) => p !== "no_title" || !it.title.trim());
 
-  let line: React.ReactNode = null;
-  if (s.k === "prepare") line = t.stkPrepare;
-  else if (s.k === "upload") line = t.stkUploading.replace("{0}", String(pct ?? 0));
-  else if (s.k === "send") line = t.stkSending;
-  else if (s.k === "converting") line = t.stkConverting;
-  else if (s.k === "done") line = t.stkDone;
-  else if (s.k === "timeout") line = t.stkTimeout;
-  else if (s.k === "error") line = `${t.stkError}: ${s.msg}`;
+  const line = statusLine(t, s, pct);
 
   return (
     <div className={`stk__item stk__item--${s.k}`}>

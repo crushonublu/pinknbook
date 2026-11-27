@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Process
 import android.graphics.Rect
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -153,6 +154,52 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  // Native-only entry points for Send to Kindle (src-tauri/src/stk.rs).
+
+  /** EPUBs other apps shared to this one ("Share → pntome"), not yet handed to the web view. */
+  private val sharedFiles = mutableListOf<String>()
+
+  /** The content:// URIs an ACTION_SEND / ACTION_SEND_MULTIPLE intent carries; read permission comes with it. */
+  private fun takeShare(intent: Intent?): Boolean {
+    val uris: List<Uri> = when (intent?.action) {
+      Intent.ACTION_SEND -> listOfNotNull(
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_STREAM)
+      )
+      Intent.ACTION_SEND_MULTIPLE ->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+        else @Suppress("DEPRECATION") intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+      else -> emptyList()
+    }
+    if (uris.isEmpty()) return false
+    synchronized(sharedFiles) { uris.forEach { sharedFiles.add(it.toString()) } }
+    return true
+  }
+
+  /** The shared files waiting (a JSON array of URIs), and forget them. */
+  @androidx.annotation.Keep
+  fun takeSharedFiles(): String = synchronized(sharedFiles) {
+    val out = org.json.JSONArray(sharedFiles)
+    sharedFiles.clear()
+    out.toString()
+  }
+
+  /** The name a content:// URI's provider gives its file, or "" when it gives none. */
+  @androidx.annotation.Keep
+  fun contentDisplayName(uri: String): String = try {
+    contentResolver.query(Uri.parse(uri), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+      if (c.moveToFirst() && !c.isNull(0)) c.getString(0) else null
+    } ?: ""
+  } catch (e: Exception) {
+    ""
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    // Already running: tell the page, which takes the files (takeSharedFiles).
+    if (takeShare(intent)) mainWebView?.evaluateJavascript("window.dispatchEvent(new Event('pntome-share'))", null)
+  }
+
   // Native-only entry points for wrap-up pictures (src-tauri/src/wrap_export.rs). Both return the
   // place on success ("" once the share sheet is open) or "!" and the reason on failure.
 
@@ -250,5 +297,7 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    // Started by a share: the page takes the files once it has loaded.
+    if (savedInstanceState == null) takeShare(intent)
   }
 }
