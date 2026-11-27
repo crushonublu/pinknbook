@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/app-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pntome stats preview</title>
+    <!-- Dev only: open it through `npm run dev`. Vite's build takes index.html alone, so this page is not in dist/. -->
+    <style>
+      /* Phone frames: a transformed box also holds the position:fixed sheets of the Android UI. */
+      .pv-phones { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: center; gap: 28px; box-sizing: border-box; min-height: 100%; padding: 24px; background: #05070a; }
+      .pv-phone { position: relative; flex: none; width: 390px; height: min(844px, calc(100vh - 48px)); overflow: hidden; border: 8px solid #22262f; border-radius: 38px; background: var(--bg); transform: translateZ(0); }
+      .pv-phone .app { height: 100%; }
+      .pv-phone__tag { position: absolute; left: 50%; top: 0; z-index: 90; padding: 1px 8px; border-radius: 0 0 8px 8px; background: #22262f; color: #9aa3b2; font: 10px sans-serif; transform: translateX(-50%); }
+      .pv-library { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 22px; padding: 24px 28px; opacity: .55; }
+      .pv-library i { display: block; aspect-ratio: 2 / 3; border-radius: 6px; }
+    </style>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/dev/statsPreview.tsx"></script>
+  </body>
+</html>

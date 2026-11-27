@@ -8,6 +8,7 @@ import { Icon } from "./icons";
 import { isReadable, relativeTime, statusLabel } from "./bookInfo";
 import { SHARED } from "./transitions";
 import GoodreadsCard, { useGoodreads } from "./GoodreadsCard";
+import { BookGenreField } from "./stats/BookGenreField";
 
 /**
  * A book's page: big cover on a blurred wash of itself, title and author,
@@ -29,6 +30,7 @@ export default function BookDetail({
   onDismissLink,
   onReadTwin,
   onSendToKindle,
+  onGenreChanged,
 }: {
   row: LibraryRow;
   lang: Lang;
@@ -46,6 +48,8 @@ export default function BookDetail({
   onDismissLink?: () => void;
   onReadTwin?: () => void;
   onSendToKindle?: () => void;
+  /** The reader set or cleared the book's genre: the stats are reloaded. */
+  onGenreChanged?: () => void;
 }) {
   const t = STR[lang];
   const coverRef = useRef<HTMLDivElement>(null);
@@ -147,6 +151,8 @@ export default function BookDetail({
               </select>
             </label>
           </div>
+
+          <BookGenreField asin={row.asin} lang={lang} refreshKey={gr.st?.details_status} onChanged={onGenreChanged} />
 
           {(row.publisher || (local && origin?.original_name)) && (
             <dl className="facts">

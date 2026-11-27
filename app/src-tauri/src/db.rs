@@ -24,6 +24,8 @@ impl Db {
         conn.execute_batch(crate::vocab::SCHEMA)?;
         conn.execute_batch(crate::ai::SCHEMA)?;
         conn.execute_batch(crate::goodreads::SCHEMA)?;
+        conn.execute_batch(crate::genre::SCHEMA)?;
+        conn.execute_batch(crate::wrap::SCHEMA)?;
         conn.execute_batch(crate::local_io::SCHEMA)?;
         Ok(Db(Mutex::new(conn)))
     }

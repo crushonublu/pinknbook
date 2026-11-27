@@ -34,6 +34,10 @@ import {
   useLocalImport,
 } from "./LocalImport";
 import { BadgeToasts, StatsPage, StreakButton, useStats } from "./Stats";
+import type { WrapSummary } from "./stats/types";
+import { WrapOffers } from "./wrap/WrapOffers";
+import { useWraps } from "./wrap/useWraps";
+import { WrapViewer } from "./wrap/WrapViewer";
 import { VocabPage } from "./Vocab";
 import { UpdateBanner, useUpdater } from "./Updater";
 import "./App.css";
@@ -94,6 +98,14 @@ export default function App() {
   /** Where to open the book being read (a saved word's place), if not the saved position. */
   const [readAt, setReadAt] = useState<string | null>(null);
   const stats = useStats(hasLib);
+  // Wrap-ups (week, month, year): offered on Home, listed in Stats, shown in a viewer.
+  const wraps = useWraps(stats.summary);
+  const [wrapOpen, setWrapOpen] = useState<WrapSummary | null>(null);
+  const openWrap = (w: WrapSummary) => {
+    wraps.markSeen(w);
+    setWrapOpen(w);
+  };
+  const wrapOffers = <WrapOffers lang={lang} offers={wraps.pending} onOpen={openWrap} onDismiss={wraps.markSeen} />;
   const updater = useUpdater();
 
   // Send to Kindle: the queue outlives the dialog.
@@ -682,7 +694,7 @@ export default function App() {
       {isAndroid && hasLib && !reading && !showStats && mobileTab === "home" && (
         <MobileHome
           onSync={auth === "in" ? startSync : undefined} syncing={busy === t.syncing} syncBusy={!!busy} progress={progress}
-          rows={visible} lang={lang} summary={stats.summary}
+          rows={visible} lang={lang} summary={stats.summary} wrapOffers={wrapOffers}
           onRead={(r) => actions.read(r, null)} onDetail={(r) => actions.details(r, null)}
           onStats={() => { setShowStats(true); stats.refresh(); }}
           onAdd={pickBooks} adding={!!localImport.state.progress}
@@ -727,15 +739,15 @@ export default function App() {
       )}
 
       {hasLib && showStats && !isAndroid && (
-        <StatsPage lang={lang} s={stats.summary} onBack={() => setShowStats(false)} onChanged={stats.refresh} />
+        <StatsPage lang={lang} s={stats.summary} loadFailed={stats.failed} rows={library} onBack={() => setShowStats(false)} onChanged={stats.refresh} wraps={{ list: wraps.all, onOpen: openWrap, onDelete: wraps.remove }} />
       )}
       {hasLib && showStats && isAndroid && !reading && <div className="mobile-stats">
-        <header className="mobile-header"><button className="iconbtn" aria-label={t.mobileHome} onClick={() => setShowStats(false)}><Icon name="arrowL" size={22} /></button><h1>{t.stats}</h1></header>
-        <StatsPage lang={lang} s={stats.summary} onBack={() => setShowStats(false)} onChanged={stats.refresh} />
+        <StatsPage lang={lang} s={stats.summary} loadFailed={stats.failed} rows={library} onBack={() => setShowStats(false)} onChanged={stats.refresh} wraps={{ list: wraps.all, onOpen: openWrap, onDelete: wraps.remove }} />
       </div>}
 
       {!isAndroid && hasLib && !showStats && !showVocab && (
         <main className="library">
+          {wrapOffers}
           <div className="libhead">
             <div className="libhead__title">
               <h1>{t.library}</h1>
@@ -854,6 +866,7 @@ export default function App() {
           onUnlink={() => linkAction("unlink_book", detailRow)}
           onReadTwin={detailTwin ? () => actions.read(detailTwin, null) : undefined}
           onSendToKindle={detailRow.source === "local" ? () => sendLocal(detailRow) : undefined}
+          onGenreChanged={stats.refresh}
         />
       )}
 
@@ -881,6 +894,7 @@ export default function App() {
           }}
         />
       )}
+      {wrapOpen && <WrapViewer lang={lang} kind={wrapOpen.kind} periodStart={wrapOpen.period_start} summary={stats.summary} onClose={() => setWrapOpen(null)} />}
       {showSend && auth === "in" && <SendDialog lang={lang} queue={sendQueue} onClose={() => setShowSend(false)} />}
       {dragging && <AddDropOverlay lang={lang} />}
       {!reading && (localImport.state.progress || localImport.state.results) && (

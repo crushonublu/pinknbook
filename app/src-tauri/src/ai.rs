@@ -412,6 +412,104 @@ pub async fn xray_ai_run(provider: Provider, job: XrayJob) -> Result<AiResult, S
     }
 }
 
+// ---- Reader profile ---------------------------------------------------------------
+
+/// Longest facts text accepted (they are a handful of numbers).
+const PROFILE_FACTS_MAX: usize = 4000;
+/// Longest sentence kept from the model.
+const PROFILE_REPLY_MAX: usize = 500;
+
+fn profile_system_prompt(lang: &str) -> String {
+    let language = if lang.starts_with("vi") { "Vietnamese" } else { "English" };
+    format!(
+        "You write the short \"reading profile\" shown on a reader's statistics page. \
+From the JSON facts about their reading, write at most 2 sentences in {language} only, \
+addressing the reader as \"you\" in a warm, plain voice. Use only numbers and genres that appear in the facts; \
+never invent anything, and leave out a fact that is null or zero. \
+Fields: night_share and early_share are fractions of timed reading between 00:00-04:00 and 04:00-06:00; \
+top_genre is the genre read most; trend_pct is the percent change against the previous period; \
+avg_min_per_reading_day is minutes; fast_finishes counts books finished within a week of starting; \
+period is week, month, year or all. Reply with the sentences only, no quotes, no list, no markdown."
+    )
+}
+
+/// Rewrite the rule-based reader profile as one or two sentences in the
+/// model's own words. `facts_json` is the `Persona` of the period plus its
+/// kind and the localised name of the top genre; nothing else is sent.
+#[tauri::command]
+pub async fn stats_profile_ai(provider: Provider, facts_json: String, lang: String) -> Result<String, String> {
+    if facts_json.len() > PROFILE_FACTS_MAX || serde_json::from_str::<Value>(&facts_json).is_err() {
+        return Err("bad facts".into());
+    }
+    let key = key_or_err(provider)?;
+    let system = profile_system_prompt(&lang);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let text = match provider {
+        Provider::Anthropic => {
+            let resp = client
+                .post(ANTHROPIC_URL)
+                .header("x-api-key", key)
+                .header("anthropic-version", ANTHROPIC_VERSION)
+                .header("anthropic-beta", ANTHROPIC_FALLBACK_BETA)
+                .json(&json!({
+                    "model": CLAUDE_MODEL,
+                    "max_tokens": 400,
+                    "system": system,
+                    "messages": [{ "role": "user", "content": facts_json }],
+                    "output_config": { "effort": "low" },
+                    "fallbacks": "default",
+                }))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            if !resp.status().is_success() {
+                return Err(http_error(resp).await);
+            }
+            let v: Value = resp.json().await.map_err(|e| e.to_string())?;
+            if v.get("stop_reason").and_then(Value::as_str) == Some("refusal") {
+                return Err("refusal".into());
+            }
+            v.get("content")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(Value::as_str))
+                .collect::<String>()
+        }
+        Provider::Deepseek => {
+            let resp = client
+                .post(DEEPSEEK_URL)
+                .bearer_auth(&key)
+                .json(&json!({
+                    "model": DEEPSEEK_MODEL,
+                    "max_tokens": 400,
+                    "thinking": { "type": "disabled" },
+                    "messages": [
+                        { "role": "system", "content": system },
+                        { "role": "user", "content": facts_json },
+                    ],
+                }))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            if !resp.status().is_success() {
+                return Err(http_error(resp).await);
+            }
+            let v: Value = resp.json().await.map_err(|e| e.to_string())?;
+            v.pointer("/choices/0/message/content").and_then(Value::as_str).unwrap_or("").to_string()
+        }
+    };
+    let text = text.trim().trim_matches('"').trim();
+    if text.is_empty() {
+        return Err("empty answer".into());
+    }
+    Ok(text.chars().take(PROFILE_REPLY_MAX).collect())
+}
+
 // ---- X-Ray storage ----------------------------------------------------------------
 
 pub const SCHEMA: &str = "
@@ -485,6 +583,12 @@ mod tests {
         assert!(vi.contains("in Vietnamese only") && vi.contains("vợ – chồng") && !vi.contains("father"));
         let en = system_prompt("en");
         assert!(en.contains("in English only") && en.contains("father – son") && !en.contains("vợ"));
+    }
+
+    #[test]
+    fn profile_prompt_names_the_language() {
+        assert!(profile_system_prompt("vi").contains("in Vietnamese only"));
+        assert!(profile_system_prompt("en").contains("in English only"));
     }
 
     #[test]

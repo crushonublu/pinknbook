@@ -1,0 +1,245 @@
+/* Wrap-up cards. The card itself (.wc) is drawn at its true size, 1080 px wide, in "card pixels":
+   WrapCard scales it as a whole to fit the screen, so every size below is in that space.
+   Colours come from the card theme class (.scard-theme--*, in stats/stats.css). The viewer (.wv),
+   the offers on Home (.wo) and the list in Stats (.wl) are ordinary app UI. */
+
+/* ---- The card ------------------------------------------------------------------------------ */
+.wc { position: relative; overflow: hidden; background: var(--sc-bg); color: var(--sc-ink); font-family: var(--st-ui, "Literata", Georgia, serif); line-height: 1.2; text-align: left; --wc-g1: var(--sc-hi); --wc-g2: var(--sc-ink); --wc-g3: var(--sc-sub); --wc-g4: color-mix(in srgb, var(--sc-hi) 50%, var(--sc-bg)); --wc-g5: color-mix(in srgb, var(--sc-ink) 45%, var(--sc-bg)); --wc-g6: var(--sc-dim); }
+.wc__bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.wc__band { position: absolute; left: 80px; right: 80px; display: flex; flex-direction: column; justify-content: center; z-index: 1; }
+.wc-sticker { position: absolute; z-index: 2; max-width: none; filter: drop-shadow(0 18px 24px rgba(0, 0, 0, .35)); pointer-events: none; user-select: none; }
+
+.wc-head { justify-content: flex-start; gap: 12px; }
+.wc__kicker { font-size: 36px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--sc-kicker); }
+.wc__title { font-family: Literata, Georgia, serif; font-style: italic; font-weight: 700; line-height: 1; white-space: nowrap; }
+.wc-foot { flex-direction: row; justify-content: space-between; align-items: center; font-size: 32px; letter-spacing: .1em; color: var(--sc-sub); }
+
+.wc__line { justify-content: center; }
+.wc__line p { margin: 0; max-width: 720px; font-family: Literata, Georgia, serif; font-size: 50px; line-height: 1.3; color: var(--sc-ink); }
+.wc__line b { font-weight: 700; color: var(--sc-hi); }
+.wc__trend { margin-top: 14px; font-size: 38px; color: var(--sc-hi); }
+
+/* Four numbers. */
+.wc-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 20px; }
+.wc-tile { display: flex; flex-direction: column; justify-content: center; gap: 10px; padding: 0 44px; border-radius: 52px; background: var(--sc-tile); min-width: 0; }
+.wc-tile__n { font-family: Literata, Georgia, serif; font-size: 92px; font-weight: 700; line-height: 1.15; color: var(--sc-hi); white-space: nowrap; }
+.wc-tile__l { font-size: 38px; color: var(--sc-sub); }
+
+/* Covers (a book's image, or the typographic cover in its spine colour). */
+.wc-cover { width: 100%; aspect-ratio: 2 / 3; border-radius: 10px; box-shadow: 0 22px 44px rgba(0, 0, 0, .4); }
+.wc-cover.cover--type { padding: 12% 10% 12% 14%; gap: calc(var(--wc-cw, 200px) * .05); }
+.wc-cover .cover--type__title, .wc-cover.cover--type .cover--type__title { font-size: calc(var(--wc-cw, 200px) * .105); }
+.wc-cover .cover--type__author { font-size: calc(var(--wc-cw, 200px) * .075); }
+
+.wc-covers__grid { display: grid; gap: 30px 26px; align-items: end; width: 100%; }
+.wc-covers__grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); --wc-cw: 288px; }
+.wc-covers__grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); --wc-cw: 212px; }
+.wc-covers__item { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; min-width: 0; }
+/* The caption sits on a chip of the card colour, so a shape behind it cannot spoil it. */
+.wc-covers__item span { padding: 2px 14px; border-radius: 20px; background: color-mix(in srgb, var(--sc-bg) 80%, transparent); font-size: 32px; color: var(--sc-sub); white-space: nowrap; }
+
+/* Week. */
+.wc-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.wc-days__col { display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+.wc-days__dow { font-size: 36px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--sc-kicker); }
+.wc-days__well { flex: 1; display: flex; align-items: center; justify-content: center; }
+.wc-days__min { font-size: 32px; color: var(--sc-sub); white-space: nowrap; }
+.wc-dot { display: block; border-radius: 50%; background: var(--sc-dim); }
+.wc-dot.is-read { background: var(--sc-sub); }
+.wc-dot.is-met { background: var(--sc-hi); }
+/* A big number and its label: the number's line is tall enough for its descenders ("g" of "5g 4p"), and the label sits clear below. */
+.wc-hero { gap: 14px; }
+.wc-hero__num { font-family: Literata, Georgia, serif; font-size: 170px; font-weight: 700; line-height: 1.18; color: var(--sc-ink); white-space: nowrap; }
+.wc-hero__num small { margin-left: 24px; font-size: 70px; font-weight: 600; color: var(--sc-hi); }
+.wc-hero__label { font-size: 44px; color: var(--sc-sub); }
+.wc-book { flex-direction: row; align-items: center; justify-content: flex-start; gap: 44px; }
+.wc-book__cover { flex: none; width: 250px; --wc-cw: 250px; }
+/* Percent padding counts the band's width here, not the cover's: set it in pixels. */
+.wc-book__cover.cover--type { padding: 34px 26px 34px 36px; }
+.wc-book__text { display: flex; flex-direction: column; gap: 10px; width: 440px; min-width: 0; }
+.wc-book__label { font-size: 32px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--sc-kicker); }
+.wc-book__title { font-family: Literata, Georgia, serif; font-size: 56px; font-weight: 700; line-height: 1.12; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.wc-book__author { font-size: 38px; color: var(--sc-sub); }
+.wc-book__time { font-size: 38px; color: var(--sc-hi); }
+
+/* Year pages. */
+.wc-h2 { justify-content: flex-start; gap: 12px; }
+.wc-h2__big { font-family: Literata, Georgia, serif; font-size: 100px; font-weight: 700; line-height: 1.15; }
+.wc-h2__label { font-size: 40px; color: var(--sc-sub); }
+.wc-wall { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; align-content: start; --wc-cw: 140px; }
+.wc-wall .wc-cover { border-radius: 6px; box-shadow: 0 10px 20px rgba(0, 0, 0, .35); }
+.wc-donut { align-items: center; }
+.wc-donut svg { width: 100%; max-height: 100%; aspect-ratio: 1; }
+.wc-legend { justify-content: flex-start; }
+.wc-legend ul { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.wc-legend li { display: flex; align-items: center; gap: 24px; padding: 0 34px; height: 64px; border-radius: 32px; background: var(--sc-tile); font-size: 36px; }
+.wc-legend i { flex: none; width: 30px; height: 30px; border-radius: 50%; }
+.wc-legend b { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wc-legend span { color: var(--sc-sub); white-space: nowrap; }
+.wc-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-content: space-between; }
+.wc-month { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px 18px; border-radius: 36px; background: var(--sc-tile); }
+.wc-month > span { font-size: 34px; font-weight: 600; color: var(--sc-kicker); }
+.wc-month > div { display: grid; grid-template-columns: repeat(7, 28px); gap: 5px; justify-content: center; }
+.wc-month i, .wc-month b { aspect-ratio: 1; border-radius: 50%; }
+.wc-month i { background: var(--sc-dim); }
+.wc-month i.is-read { background: var(--sc-sub); }
+.wc-month i.is-met { background: var(--sc-hi); }
+.wc-hours { padding: 40px 36px 28px; border-radius: 52px; background: var(--sc-tile); gap: 18px; }
+.wc-hours__bars { flex: 1; display: flex; align-items: flex-end; gap: 8px; min-height: 0; }
+.wc-hours__bars i { flex: 1; border-radius: 10px 10px 4px 4px; background: var(--sc-dim); }
+.wc-hours__bars i.is-lit { background: var(--sc-hi); }
+.wc-hours__axis { display: flex; justify-content: space-between; font-size: 30px; color: var(--sc-sub); }
+.wc-badges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; align-content: start; }
+.wc-badges > div { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 12px 20px; border-radius: 44px; background: var(--sc-tile); }
+.wc-badges img { width: 150px; height: 150px; object-fit: contain; }
+.wc-badges span { font-size: 32px; font-weight: 600; text-align: center; overflow-wrap: anywhere; }
+
+/* The post format is 570 px shorter: the same elements, a little smaller. */
+.wc--post .wc-tile__n { font-size: 72px; }
+.wc--post .wc-tile__l { font-size: 32px; }
+.wc--post .wc-tile { padding: 0 38px; }
+.wc--post .wc-hero__num { font-size: 130px; }
+.wc--post .wc-hero__num small { font-size: 60px; }
+.wc--post .wc-hero__label { font-size: 38px; }
+.wc--post .wc__line p { font-size: 44px; }
+.wc--post .wc-book__cover { width: 180px; --wc-cw: 180px; }
+.wc--post .wc-book__cover.cover--type { padding: 24px 18px 24px 26px; }
+.wc--post .wc-book__title { font-size: 48px; }
+.wc--post .wc-book__author, .wc--post .wc-book__time { font-size: 34px; }
+.wc--post .wc-days__dow { font-size: 32px; }
+.wc--post .wc-h2__big { font-size: 84px; }
+.wc--post .wc-legend li { height: 48px; font-size: 30px; }
+.wc--post .wc-legend ul { gap: 6px; }
+.wc--post .wc-month { padding: 10px 12px 12px; gap: 6px; border-radius: 28px; }
+.wc--post .wc-month > div { grid-template-columns: repeat(7, 24px); gap: 4px; }
+.wc--post .wc-month > span { font-size: 28px; }
+.wc--post .wc-months { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.wc--post .wc-badges img { width: 120px; height: 120px; }
+.wc--post .wc-badges { gap: 14px; }
+.wc--post .wc-hours { padding: 30px 28px 22px; }
+
+/* ---- Viewer -------------------------------------------------------------------------------- */
+.wv { position: fixed; z-index: 210; inset: 52px 0 0 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(10px); }
+.wv__panel { display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: auto minmax(0, 1fr) auto; grid-template-areas: "head head" "stage side" "pages side"; gap: 16px 28px; width: min(980px, 100%); height: 100%; max-height: 980px; padding: 20px 24px; border: 1px solid var(--border); border-radius: 28px; background: var(--surface); color: var(--text); }
+.wv__head { grid-area: head; display: flex; align-items: center; gap: 12px; }
+.wv__head h1 { margin: 0; font-family: Literata, Georgia, serif; font-size: 22px; font-weight: 700; }
+.wv__tag { padding: 3px 10px; border-radius: 12px; background: var(--surface-2); font-size: 12px; color: var(--muted); }
+.wv__stage { grid-area: stage; position: relative; min-height: 0; display: flex; align-items: center; justify-content: center; }
+.wc-stage__card { flex: none; overflow: hidden; border-radius: 24px; box-shadow: 0 20px 50px rgba(0, 0, 0, .4); }
+.wv__pages { grid-area: pages; display: flex; align-items: center; justify-content: center; gap: 14px; }
+.wv__pages > div { display: flex; gap: 2px; }
+.wv__side { grid-area: side; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+/* Six round targets in one row, in the side panel's 320 px as well as on a phone. */
+.wv__swatches { display: flex; justify-content: space-between; gap: 8px; }
+.wv__swatch { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border); box-sizing: border-box; cursor: pointer; }
+.wv__swatch[aria-pressed="true"] { border: 3px solid var(--text); box-shadow: 0 0 0 2px var(--surface); }
+.wv__swatch:focus-visible, .wv__dot:focus-visible, .wv__btn:focus-visible, .wv__round:focus-visible, .wv__seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wv__row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.wv__btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 18px; border: 1px solid var(--border); border-radius: 22px; background: var(--surface-2); color: var(--text); font: 600 14px var(--st-ui, inherit); cursor: pointer; }
+.wv__btn--primary { border-color: transparent; background: var(--accent); color: var(--st-on-accent, #1f0710); }
+.wv__btn:disabled { opacity: .5; cursor: not-allowed; }
+.wv__row--tools .wv__btn { flex: 1 1 0; padding: 0 12px; white-space: nowrap; }
+/* Undo and delete sit at the right of the title, out of the way of the controls below. */
+.wv__edit { display: flex; gap: 8px; margin-left: auto; }
+.wv__row--actions .wv__btn { flex: 1; }
+.wv__round { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--text); cursor: pointer; }
+.wv__round:disabled { opacity: .4; cursor: default; }
+.wv__panel { position: relative; }
+/* A notice (saved, copied, or what went wrong) over the foot of the card. */
+.wv__notice { position: absolute; left: 50%; bottom: 8px; max-width: 92%; padding: 10px 18px; border-radius: 20px; background: var(--text); color: var(--bg); font: 600 14px var(--st-ui, inherit); text-align: center; transform: translateX(-50%); pointer-events: none; }
+.wv__notice.is-error { background: #b3261e; color: #fff; }
+.wv__notice small { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; opacity: .85; overflow-wrap: anywhere; }
+
+/* ---- Sticker editor: a layer over the card in card pixels; --inv turns screen pixels into them ---- */
+.wc-edit { position: absolute; inset: 0; z-index: 3; touch-action: none; }
+.wc-edit__s { position: absolute; padding: 0; border: 0; border-radius: 8px; background: none; cursor: grab; touch-action: none; -webkit-tap-highlight-color: transparent; }
+.wc-edit__s:active { cursor: grabbing; }
+.wc-edit__s:focus { outline: none; }
+.wc-edit__s:focus-visible, .wc-edit__s.is-selected { outline: calc(3px * var(--inv)) dashed #fff; outline-offset: calc(2px * var(--inv)); box-shadow: 0 0 0 calc(2px * var(--inv)) rgba(20, 20, 30, .6); }
+.wc-edit__handle { position: absolute; right: 0; bottom: 0; width: calc(26px * var(--inv)); height: calc(26px * var(--inv)); border: calc(3px * var(--inv)) solid #1d1d28; border-radius: 50%; background: #fff; box-sizing: border-box; cursor: nwse-resize; transform: translate(50%, 50%); touch-action: none; }
+/* The phone turns and scales with two fingers. */
+.is-android .wc-edit__handle { display: none; }
+
+/* ---- Sticker tray: a popover over the side panel, a bottom sheet on the phone ---- */
+.wt__backdrop { position: absolute; inset: 0; z-index: 4; border: 0; background: transparent; cursor: default; }
+.wt { position: absolute; z-index: 5; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 10px; width: 340px; max-height: calc(100% - 96px); padding: 14px 16px 12px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); box-shadow: 0 20px 50px rgba(0, 0, 0, .45); }
+.wt__head { display: flex; align-items: center; justify-content: space-between; }
+.wt__head h2 { margin: 0; font-family: Literata, Georgia, serif; font-size: 18px; font-weight: 700; }
+.wt__filter { flex: none; min-height: 44px; padding: 0 16px; border: 1px solid var(--border); border-radius: 22px; background: var(--surface-2); color: var(--text); font: 14px var(--st-ui, inherit); }
+.wt__filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wt__scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; overscroll-behavior: contain; }
+.wt h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.wt ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.wt li button { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 1; padding: 6px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-2); cursor: pointer; }
+.wt li button:hover { border-color: var(--accent); }
+.wt li button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wt li img { width: 100%; height: 100%; object-fit: contain; }
+.wt__credit { flex: none; margin: 0; font-size: 12px; text-align: center; color: var(--muted); }
+.is-android .wt__backdrop { position: fixed; background: rgba(0, 0, 0, .5); }
+.is-android .wt { position: fixed; left: 0; right: 0; bottom: 0; width: auto; max-height: 68vh; padding-bottom: calc(12px + var(--mobile-safe-bottom, 0px)); border-width: 1px 0 0; border-radius: 24px 24px 0 0; }
+.wv__seg { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: 22px; background: var(--surface-2); }
+.wv__seg button { min-height: 36px; padding: 0 14px; border: 0; border-radius: 18px; background: none; color: var(--muted); font: 600 13px var(--st-ui, inherit); cursor: pointer; }
+.wv__seg button[aria-pressed="true"] { background: var(--accent); color: var(--st-on-accent, #1f0710); }
+/* A page dot is a 44px target with a small dot inside. */
+.wv__dot { position: relative; width: 28px; height: 44px; border: 0; background: none; cursor: pointer; }
+.wv__dot::after { content: ""; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; border-radius: 50%; background: var(--st-dim); transform: translate(-50%, -50%); }
+.wv__dot[aria-pressed="true"]::after { width: 14px; height: 14px; background: var(--accent); }
+
+/* On the phone: the whole screen, one column. */
+.is-android .wv { inset: 0; padding: 0; background: var(--bg); backdrop-filter: none; }
+.is-android .wv__panel { display: flex; flex-direction: column; gap: 12px; width: 100%; max-height: none; padding: calc(12px + var(--mobile-safe-top, 0px)) 16px calc(16px + var(--mobile-safe-bottom, 0px)); border: 0; border-radius: 0; background: none; }
+.is-android .wv__stage { flex: 1; }
+.is-android .wv__side { justify-content: flex-start; gap: 12px; }
+.is-android .wv__swatches { justify-content: center; }
+.is-android .wv__row { justify-content: center; }
+.is-android .wv__head h1 { font-size: 20px; }
+@media (max-width: 760px) {
+  .wv { padding: 0; }
+  .wv__panel { display: flex; flex-direction: column; border-radius: 0; border: 0; }
+  .wv__stage { flex: 1; }
+  .wv__side { justify-content: flex-start; }
+}
+
+/* ---- Offers on Home ------------------------------------------------------------------------ */
+.wo-list { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.wo { position: relative; display: flex; align-items: center; border: 1px solid var(--sc-border); border-radius: 24px; background: var(--sc-bg); color: var(--sc-ink); }
+.wo__main { flex: 1; display: flex; align-items: center; gap: 14px; min-width: 0; min-height: 44px; padding: 12px 56px 12px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; border-radius: 24px; }
+.wo__main img { flex: none; width: 56px; height: 56px; object-fit: contain; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .4)); }
+.wo__text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.wo__title { font-family: Literata, Georgia, serif; font-size: 17px; font-weight: 600; line-height: 1.25; }
+.wo__see { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--sc-hi); }
+.wo__x { position: absolute; top: 4px; right: 4px; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--sc-sub); cursor: pointer; }
+.wo__x:hover { background: var(--sc-btn); }
+.wo__main:focus-visible, .wo__x:focus-visible { outline: 2px solid var(--sc-hi); outline-offset: -2px; }
+/* On the desktop the offers sit in a row above the library. */
+.library > .wo-list { flex-direction: row; flex-wrap: wrap; margin-bottom: 18px; }
+.library > .wo-list .wo { flex: 0 1 380px; }
+
+/* ---- List in Stats --------------------------------------------------------------------------- */
+.wl__yearname { margin: 4px 0 0; font-family: Literata, Georgia, serif; font-size: 15px; font-weight: 600; color: var(--muted); }
+.wl__list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.wl__list li { display: flex; align-items: center; border-top: 1px solid var(--border); }
+.wl__list li:first-child { border-top: 0; }
+.wl__open { display: flex; flex: 1; min-width: 0; align-items: center; gap: 12px; min-height: 56px; padding: 8px 4px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.wl__open img { flex: none; width: 40px; height: 40px; object-fit: contain; }
+.wl__label { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; }
+.wl__kind { flex: none; padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); }
+.wl__kind--month { border-color: var(--accent); }
+.wl__kind--year { background: var(--accent); border-color: var(--accent); color: var(--st-on-accent); }
+.wl__tag { flex: none; padding: 2px 9px; border-radius: 10px; background: var(--surface-2); font-size: 12px; color: var(--muted); }
+.wl__del { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 22px; background: none; color: var(--muted); cursor: pointer; }
+.wl__del:hover { background: var(--surface-2); color: var(--text); }
+.wl__ask { display: flex; flex: 1; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 56px; padding: 6px 4px; }
+.wl__asktext { flex: 1 1 160px; font-size: 14px; font-weight: 600; }
+.wl__asktext small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+.wl__yes, .wl__no { min-height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid var(--border); background: none; color: var(--text); font: 600 14px var(--st-ui, inherit); cursor: pointer; }
+.wl__yes { background: var(--text); color: var(--bg); border-color: transparent; }
+:is(.wl__open, .wl__del, .wl__yes, .wl__no):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+.stx .wl { width: 100%; }
+
+/* ---- Stats header button (desktop) --------------------------------------------------------------- */
+.stx-wrapbtn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: 600 13px var(--st-ui, inherit); cursor: pointer; }
+.stx-wrapbtn:hover { background: var(--surface-2); }
+.stx-wrapbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Dots are 44px targets on the phone (see mobile.css): the arrows give way, there is no room for both. */
+.is-android .wv__pages .wv__round { display: none; }

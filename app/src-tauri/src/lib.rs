@@ -6,14 +6,18 @@ mod commands;
 mod creds;
 mod db;
 mod dict;
+mod genre;
 mod goodreads;
 mod library_meta;
 mod local;
 mod local_io;
 mod meta;
+mod period;
 mod stats;
 mod stk;
 mod vocab;
+mod wrap;
+mod wrap_export;
 
 use tauri::Manager;
 
@@ -110,6 +114,22 @@ pub fn run() {
             stats::kindle_activity_tick,
             stats::stats_summary,
             stats::set_stats_settings,
+            stats::log_manual_reading,
+            stats::delete_manual_reading,
+            period::stats_period,
+            period::stats_day,
+            genre::genre_list,
+            genre::set_book_genre,
+            genre::book_genre,
+            genre::genre_fill,
+            stats::manual_readings,
+            wrap::wrap_delete,
+            wrap::wraps_pending,
+            wrap::wrap_get,
+            wrap::wrap_save_layout,
+            wrap::wrap_mark_seen,
+            wrap::wraps_list,
+            wrap_export::wrap_export,
             dict::dict_status,
             dict::dict_install,
             dict::dict_lookup,
@@ -122,6 +142,7 @@ pub fn run() {
             ai::ai_key_clear,
             ai::xray_ai_estimate,
             ai::xray_ai_run,
+            ai::stats_profile_ai,
             ai::xray_load,
             ai::xray_save,
             annotations::kindle_pull_annotations,

@@ -4,13 +4,14 @@ import BookDetail from "../BookDetail";
 import { BookCover } from "../BookCover";
 import { isReadable, statusLabel } from "../bookInfo";
 import GoodreadsCard, { useGoodreads } from "../GoodreadsCard";
+import { BookGenreField } from "../stats/BookGenreField";
 import { STR } from "../i18n";
 import { Icon } from "../icons";
 import { STATUS_ORDER, type ReadStatus } from "../types";
 import { percent } from "./MobileShell";
 import { useMobileDismiss } from "./back";
 
-export default function MobileBookSheet({ row, lang, onClose, onRead, onEdit, onStatus, onRemove, twin, onLink, onUnlink, onDismissLink }: ComponentProps<typeof BookDetail>) {
+export default function MobileBookSheet({ row, lang, onClose, onRead, onEdit, onStatus, onRemove, twin, onLink, onUnlink, onDismissLink, onGenreChanged }: ComponentProps<typeof BookDetail>) {
   const t = STR[lang]; const gr = useGoodreads(row.asin);
   const [menu, setMenu] = useState(false); const [expanded, setExpanded] = useState(false);
   const close = useRef<HTMLButtonElement>(null); const sheet = useRef<HTMLElement>(null);
@@ -51,6 +52,7 @@ export default function MobileBookSheet({ row, lang, onClose, onRead, onEdit, on
       <div className="mobile-sheet__body"><div className="mobile-sheet__cover"><BookCover row={row} /></div><h2>{row.title}</h2><p className="mobile-sheet__author">{row.author || t.noAuthor}</p>
         <div className="mobile-sheet__stats"><div><b>{rating != null ? `★ ${new Intl.NumberFormat(lang, { maximumFractionDigits: 2 }).format(rating)}` : "—"}</b><small>{t.mobileGoodreads}</small></div><div><b>{percent(row)}%</b><small>{t.progressDone}</small></div><div><b>{gr.st?.book?.pages ?? "—"}</b><small>{t.grPages}</small></div></div>
         <div className="mobile-sheet__status"><span className="muted">{t.status}</span><MobilePicker label={t.status} value={row.status_manual ? row.status : "auto"} options={[{ value: "auto", label: `${t.statusAuto} (${statusLabel(t, (row.percent ?? 0) >= 97.5 ? "finished" : (row.percent ?? 0) > .5 ? "reading" : "unread")})` }, ...STATUS_ORDER.map((s) => ({ value: s, label: statusLabel(t, s) }))]} onChange={(s) => onStatus(s === "auto" ? null : s as ReadStatus)} /></div>
+        <BookGenreField asin={row.asin} lang={lang} refreshKey={gr.st?.details_status} onChanged={onGenreChanged} />
         {twin && <p className="muted">{row.linked_asin ? t.kindleTwin : t.linkSuggest}: {twin.title}</p>}
         {description && <section><h3>{t.about}</h3><p className={expanded ? "mobile-description is-open" : "mobile-description"}>{description}</p><button className="linkbtn" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? t.showLess : t.showMore}</button></section>}
         {!!row.subjects.length && <div className="tags">{row.subjects.map((tag) => <span className="tag" key={tag}>{tag}</span>)}</div>}

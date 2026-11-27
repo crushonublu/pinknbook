@@ -27,11 +27,11 @@ const BASE: &str = "https://www.goodreads.com";
 /// Re-match (and refresh the rating) after this many days.
 const FOUND_TTL_DAYS: f64 = 30.0;
 /// Try again for a book Goodreads did not know after this many days.
-const NONE_TTL_DAYS: f64 = 7.0;
+pub(crate) const NONE_TTL_DAYS: f64 = 7.0;
 /// Refresh genres / reviews after this many days.
 const DETAILS_TTL_DAYS: f64 = 30.0;
 /// After a blocked book page, wait this long before trying on our own again.
-const BLOCKED_RETRY_MINUTES: f64 = 60.0;
+pub(crate) const BLOCKED_RETRY_MINUTES: f64 = 60.0;
 const MAX_REVIEWS: usize = 5;
 const REVIEW_CHARS: usize = 700;
 

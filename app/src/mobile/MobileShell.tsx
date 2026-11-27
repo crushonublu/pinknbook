@@ -5,6 +5,7 @@ import { BookCover } from "../BookCover";
 import { continueBook, isLocal, isReadable, statusLabel } from "../bookInfo";
 import { EmptyLibrary } from "../LocalImport";
 import { Icon } from "../icons";
+import { HomeStreakCard, HomeYearRow } from "../stats/HomeCards";
 import type { StatsSummary } from "../Stats";
 import type { LibraryRow, LibraryView, ReadStatus, SortKey } from "../types";
 
@@ -49,10 +50,8 @@ function MobileSyncProgress({ syncing, progress, lang }: { syncing: boolean; pro
   return syncing && <p className="mobile-sync-progress" role="status">{STR[lang].mobileSyncProgress.replace("{0}", String(progress?.done ?? 0)).replace("{1}", String(progress?.total ?? 0))}</p>;
 }
 
-export function MobileHome({ rows, lang, summary, onRead, onDetail, onStats, onAdd, onSearch, onReadingBooks, adding, onSync, syncing, syncBusy, progress }: { rows: LibraryRow[]; lang: Lang; summary: StatsSummary | null; onRead: (r: LibraryRow) => void; onDetail: (r: LibraryRow) => void; onStats: () => void; onAdd: () => void; onSearch: () => void; onReadingBooks?: () => void; adding: boolean } & MobileSyncProps) {
+export function MobileHome({ rows, lang, summary, wrapOffers, onRead, onDetail, onStats, onAdd, onSearch, onReadingBooks, adding, onSync, syncing, syncBusy, progress }: { rows: LibraryRow[]; lang: Lang; summary: StatsSummary | null; wrapOffers?: ReactNode; onRead: (r: LibraryRow) => void; onDetail: (r: LibraryRow) => void; onStats: () => void; onAdd: () => void; onSearch: () => void; onReadingBooks?: () => void; adding: boolean } & MobileSyncProps) {
   const t = STR[lang]; const book = continueBook(rows);
-  const minutes = Math.floor(((summary?.today_app_sec ?? 0) + (summary?.today_kindle_sec ?? 0)) / 60);
-  const goal = summary?.goal_minutes ?? 10;
   const reading = rows.filter((r) => r.status === "reading" && r.asin !== book?.asin);
   const unread = rows.filter((r) => r.status === "unread").sort((a, b) => b.purchase_date.localeCompare(a.purchase_date));
   const shelves: { title: string; books: LibraryRow[] }[] = [
@@ -62,8 +61,10 @@ export function MobileHome({ rows, lang, summary, onRead, onDetail, onStats, onA
   return <><MobileHeader title={t.mobileHome}><button className="iconbtn" onClick={onSearch} aria-label={t.searchPlaceholder}><Icon name="search" size={20} /></button><MobileSyncButton onSync={onSync} syncing={syncing} syncBusy={syncBusy} progress={progress} lang={lang} /><button className="iconbtn" onClick={onAdd} disabled={adding} aria-label={t.addBooks}><Icon name="plus" size={20} /></button></MobileHeader>
     <MobileSyncProgress syncing={syncing} progress={progress} lang={lang} />
     <main className="mobile-content mobile-home">{!rows.length ? <EmptyLibrary lang={lang} onAdd={onAdd} /> : <>
+      {wrapOffers}
+      <HomeStreakCard lang={lang} summary={summary} reading={book ? [book, ...reading] : reading} onOpen={onStats} />
       {book && <button className="mobile-continue" onClick={() => onRead(book)}><span className="mobile-continue__cover"><BookCover row={book} /></span><span className="mobile-continue__info"><small>{t.statusReading}</small><strong>{book.title}</strong><em>{book.author || t.noAuthor}</em><span className="mobile-progress"><span><i style={{ width: `${percent(book)}%` }} /></span><span>{percent(book)}%</span></span></span></button>}
-      <div className="mobile-tiles"><button onClick={onStats}><svg width="46" height="46" viewBox="0 0 46 46" aria-hidden="true"><circle cx="23" cy="23" r="19" fill="none" stroke="var(--border)" strokeWidth="5" /><circle cx="23" cy="23" r="19" fill="none" stroke="var(--accent)" strokeWidth="5" strokeDasharray={`${Math.min(1, minutes / Math.max(1, goal)) * 120} 120`} transform="rotate(-90 23 23)" /></svg><span><b>{t.minutesN.replace("{0}", `${minutes}/${goal}`)}</b><small>{t.mobileTodayGoal}</small></span></button><button onClick={onStats}><Icon name="flame" size={34} /><span><b>{t.streakDays.replace("{0}", String(summary?.streak.current ?? 0))}</b><small>{t.mobileStreak}</small></span></button></div>
+      <HomeYearRow lang={lang} summary={summary} rows={rows} onOpen={onStats} />
       {shelves.map(({ title, books }, index) => books.length > 0 && <section key={title}><div className="mobile-home__shelfhead"><h2>{title}</h2>{index === 0 && onReadingBooks && <button className="linkbtn" onClick={onReadingBooks}>{t.seeAll}</button>}</div><div className="mobile-book-row">{books.map((r) => <MobileBook key={r.asin} row={r} lang={lang} onRead={onRead} onDetail={onDetail} />)}</div></section>)}
     </>}</main></>;
 }
