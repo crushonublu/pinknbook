@@ -727,7 +727,7 @@ export default function App() {
 
       {isAndroid && hasLib && !reading && !showStats && mobileTab === "home" && (
         <MobileHome
-          onSync={auth === "in" ? startSync : undefined} syncing={busy === t.syncing} syncBusy={!!busy} progress={progress}
+          onSync={auth === "in" ? startSync : undefined} syncing={busy === t.syncing} syncBusy={!!busy} progress={progress} meta={metaProgress}
           rows={visible} loading={!libLoaded} lang={lang} summary={stats.summary} wrapOffers={wrapOffers}
           onRead={(r) => actions.read(r, null)} onDetail={(r) => actions.details(r, null)}
           onStats={() => { setShowStats(true); stats.refresh(); }}
@@ -738,7 +738,7 @@ export default function App() {
       )}
       {isAndroid && hasLib && !reading && !showStats && mobileTab === "library" && (
         <MobileLibrary
-          onSync={auth === "in" ? startSync : undefined} syncing={busy === t.syncing} syncBusy={!!busy} progress={progress}
+          onSync={auth === "in" ? startSync : undefined} syncing={busy === t.syncing} syncBusy={!!busy} progress={progress} meta={metaProgress}
           matchFilter={onlyMatches} onClearMatches={() => setOnlyMatches(false)}
           rows={shown} total={visible.length} loading={!libLoaded} mixed={mixedSources} lang={lang}
           query={query} setQuery={setQuery} sort={sort} setSort={setSort}

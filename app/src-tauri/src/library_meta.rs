@@ -135,13 +135,20 @@ pub async fn enrich_library(app: AppHandle) -> Result<(), String> {
         };
         let creds = creds::load().ok().flatten();
         let total = todo.len();
+        // Shown from the start, not only after the first book.
+        if total > 0 {
+            let _ = app.emit("meta-progress", Progress { done: 0, total, asin: "" });
+        }
         for (i, (asin, cde)) in todo.iter().enumerate() {
             if let Err(e) = enrich_one(&app, creds.as_ref(), asin, cde).await {
                 eprintln!("[meta] {asin}: {e}");
             }
+            // The book's length may just have arrived: its reading progress can now be a percentage.
+            let _ = app.state::<Db>().fill_percents();
             let _ = app.emit("meta-progress", Progress { done: i + 1, total, asin });
         }
         backfill_lengths(&app);
+        let _ = app.state::<Db>().fill_percents();
         Ok(())
     }
     .await;

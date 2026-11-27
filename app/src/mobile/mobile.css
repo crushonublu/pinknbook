@@ -19,7 +19,11 @@
 .is-android .mobile-header h1 span { font-size: 14px; font-weight: 400; color: var(--muted); white-space: nowrap; }
 .is-android .mobile-header__actions { display: flex; gap: 6px; }
 .is-android .mobile-header .iconbtn { background: var(--surface); }
-.is-android .mobile-sync-progress { margin: 0; padding: 0 20px 8px; color: var(--muted); font-size: 13px; }
+.is-android .mobile-sync-progress { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0 20px 10px; color: var(--muted); font-size: 13px; }
+.is-android .mobile-sync-progress__line { display: flex; flex-direction: column; gap: 5px; }
+.is-android .mobile-sync-progress__text { display: flex; align-items: center; gap: 7px; }
+.is-android .mobile-sync-progress__bar { display: block; height: 3px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.is-android .mobile-sync-progress__bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
 .is-android .mobile-signout { flex: 0 0 44px; width: 44px; height: 44px; margin-left: auto; }
 .is-android .mobile-library__sort { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); }
 .is-android .mobile-picker__trigger { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 44px; min-height: 44px; max-width: 100%; padding: 8px 0; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px; text-align: right; }

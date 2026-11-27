@@ -494,6 +494,21 @@ impl Db {
         .filter(|n| *n > 0)
     }
 
+    /// Kindle positions stored before their book's length was known (a first
+    /// sync fetches positions while the books are still being downloaded):
+    /// turn them into percentages now that the lengths are in.
+    pub fn fill_percents(&self) -> rusqlite::Result<usize> {
+        let conn = self.0.lock().unwrap();
+        conn.execute(
+            "UPDATE reading_state
+             SET percent = MIN(100.0, MAX(0.0, furthest_pos * 100.0
+                 / (SELECT m.text_length FROM book_meta m WHERE m.asin = reading_state.asin)))
+             WHERE percent IS NULL AND furthest_pos IS NOT NULL
+               AND (SELECT m.text_length FROM book_meta m WHERE m.asin = reading_state.asin) > 0",
+            [],
+        )
+    }
+
     /// Record a book's text length (0 = unknown, so it is not retried).
     pub fn set_text_length(&self, asin: &str, len: i64) -> rusqlite::Result<()> {
         let conn = self.0.lock().unwrap();
@@ -858,6 +873,37 @@ mod tests {
         let db = super::Db::open(std::path::Path::new(&std::env::var("PINKNBOOK_DB").unwrap())).unwrap();
         let rows = db.list_library().unwrap();
         std::fs::write(std::env::var("PINKNBOOK_OUT").unwrap(), serde_json::to_string_pretty(&rows).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn positions_become_percentages_once_the_length_is_known() {
+        let path = std::env::temp_dir().join(format!("pnb-fill-{}.sqlite", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let db = super::Db::open(&path).unwrap();
+        let state = |asin: &str, pos: Option<i64>, percent: Option<f64>| crate::adp::client::ReadingState {
+            asin: asin.into(),
+            position: pos,
+            percent,
+        };
+        // A first sync: positions only (the books were not downloaded yet), one already known.
+        db.upsert_reading_state(&state("A", Some(2_500), None)).unwrap();
+        db.upsert_reading_state(&state("B", Some(9_000), None)).unwrap();
+        db.upsert_reading_state(&state("C", Some(100), Some(42.0))).unwrap();
+        db.upsert_reading_state(&state("D", None, None)).unwrap();
+        db.0.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO book_meta (asin, source, text_length) VALUES ('A', 'file', 10000), ('B', 'file', 0), ('C', 'file', 1000), ('D', 'file', 500);",
+            )
+            .unwrap();
+        // A's length arrived; B's is unknown (0); C keeps the percentage it had; D has no position.
+        assert_eq!(db.fill_percents().unwrap(), 1);
+        let percent = |asin: &str| -> Option<f64> {
+            db.0.lock().unwrap().query_row("SELECT percent FROM reading_state WHERE asin = ?1", [asin], |r| r.get(0)).unwrap()
+        };
+        assert_eq!((percent("A"), percent("B"), percent("C"), percent("D")), (Some(25.0), None, Some(42.0), None));
+        drop(db);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

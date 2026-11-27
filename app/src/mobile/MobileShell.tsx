@@ -42,16 +42,28 @@ export function MobileBook({ row, lang, onRead, onDetail, list = false }: { row:
   </button>;
 }
 
-type MobileSyncProps = { onSync?: () => void; syncing: boolean; syncBusy: boolean; progress: { done: number; total: number } | null };
+type Progress = { done: number; total: number } | null;
+/** `progress`: reading progress being fetched (a sync); `meta`: covers and book details being fetched (after it). */
+type MobileSyncProps = { onSync?: () => void; syncing: boolean; syncBusy: boolean; progress: Progress; meta?: Progress };
 function MobileSyncButton({ onSync, syncing, syncBusy, lang }: MobileSyncProps & { lang: Lang }) {
   const t = STR[lang];
   return onSync && <button className="iconbtn" onClick={onSync} disabled={syncBusy} aria-label={t.sync} title={t.sync} aria-busy={syncing}><Icon name="refresh" size={20} className={syncing ? "icon--spin" : undefined} /></button>;
 }
-function MobileSyncProgress({ syncing, progress, lang }: { syncing: boolean; progress: MobileSyncProps["progress"]; lang: Lang }) {
-  return syncing && <p className="mobile-sync-progress" role="status">{STR[lang].mobileSyncProgress.replace("{0}", String(progress?.done ?? 0)).replace("{1}", String(progress?.total ?? 0))}</p>;
+/** What a sync is doing, step by step: the book list, then each book's reading progress, then covers and details. */
+function MobileSyncProgress({ syncing, progress, meta, lang }: { syncing: boolean; progress: Progress; meta?: Progress; lang: Lang }) {
+  const t = STR[lang];
+  const count = (s: string, p: { done: number; total: number }) => s.replace("{0}", String(p.done)).replace("{1}", String(p.total));
+  const lines: { text: string; share: number | null }[] = [];
+  if (syncing) lines.push(progress?.total ? { text: count(t.mobileSyncProgress, progress), share: progress.done / progress.total } : { text: t.mobileSyncList, share: null });
+  if (meta?.total) lines.push({ text: count(t.mobileSyncMeta, meta), share: meta.done / meta.total });
+  if (!lines.length) return null;
+  return <div className="mobile-sync-progress" role="status">{lines.map((l, i) => <div key={i} className="mobile-sync-progress__line">
+    <span className="mobile-sync-progress__text"><Icon name="refresh" size={13} className="icon--spin" />{l.text}</span>
+    {l.share != null && <span className="mobile-sync-progress__bar"><i style={{ width: `${Math.round(l.share * 100)}%` }} /></span>}
+  </div>)}</div>;
 }
 
-export function MobileHome({ rows, loading, lang, summary, wrapOffers, onRead, onDetail, onStats, onAdd, onSearch, onReadingBooks, adding, onSync, syncing, syncBusy, progress }: { rows: LibraryRow[]; loading?: boolean; lang: Lang; summary: StatsSummary | null; wrapOffers?: ReactNode; onRead: (r: LibraryRow) => void; onDetail: (r: LibraryRow) => void; onStats: () => void; onAdd: () => void; onSearch: () => void; onReadingBooks?: () => void; adding: boolean } & MobileSyncProps) {
+export function MobileHome({ rows, loading, lang, summary, wrapOffers, onRead, onDetail, onStats, onAdd, onSearch, onReadingBooks, adding, onSync, syncing, syncBusy, progress, meta }: { rows: LibraryRow[]; loading?: boolean; lang: Lang; summary: StatsSummary | null; wrapOffers?: ReactNode; onRead: (r: LibraryRow) => void; onDetail: (r: LibraryRow) => void; onStats: () => void; onAdd: () => void; onSearch: () => void; onReadingBooks?: () => void; adding: boolean } & MobileSyncProps) {
   const t = STR[lang]; const book = continueBook(rows);
   const reading = rows.filter((r) => r.status === "reading" && r.asin !== book?.asin);
   const unread = rows.filter((r) => r.status === "unread").sort((a, b) => b.purchase_date.localeCompare(a.purchase_date));
@@ -60,7 +72,7 @@ export function MobileHome({ rows, loading, lang, summary, wrapOffers, onRead, o
     { title: t.mobileNext, books: unread },
   ];
   return <><MobileHeader title={t.mobileHome}><button className="iconbtn" onClick={onSearch} aria-label={t.searchPlaceholder}><Icon name="search" size={20} /></button><MobileSyncButton onSync={onSync} syncing={syncing} syncBusy={syncBusy} progress={progress} lang={lang} /><button className="iconbtn" onClick={onAdd} disabled={adding} aria-label={t.addBooks}><Icon name="plus" size={20} /></button></MobileHeader>
-    <MobileSyncProgress syncing={syncing} progress={progress} lang={lang} />
+    <MobileSyncProgress syncing={syncing} progress={progress} meta={meta} lang={lang} />
     <main className="mobile-content mobile-home">{loading ? <LibrarySkeleton kind="home" label={t.loading} /> : !rows.length ? <EmptyLibrary lang={lang} onAdd={onAdd} /> : <>
       {wrapOffers}
       <HomeStreakCard lang={lang} summary={summary} reading={book ? [book, ...reading] : reading} onOpen={onStats} />
@@ -70,13 +82,13 @@ export function MobileHome({ rows, loading, lang, summary, wrapOffers, onRead, o
     </>}</main></>;
 }
 
-export function MobileLibrary({ rows, total, loading, mixed, lang, query, setQuery, sort, setSort, status, setStatus, source, setSource, view, setView, focus, onAdd, adding, onRead, onDetail, onSync, syncing, syncBusy, progress, matchFilter, onClearMatches }: {
+export function MobileLibrary({ rows, total, loading, mixed, lang, query, setQuery, sort, setSort, status, setStatus, source, setSource, view, setView, focus, onAdd, adding, onRead, onDetail, onSync, syncing, syncBusy, progress, meta, matchFilter, onClearMatches }: {
   rows: LibraryRow[]; total: number; loading?: boolean; mixed: boolean; lang: Lang; query: string; setQuery: (q: string) => void; sort: SortKey; setSort: (s: SortKey) => void; status: ReadStatus | null; setStatus: (s: ReadStatus | null) => void; source: MobileSource; setSource: (s: MobileSource) => void; view: LibraryView; setView: (v: LibraryView) => void; focus: number; onAdd: () => void; adding: boolean; onRead: (r: LibraryRow) => void; onDetail: (r: LibraryRow) => void; matchFilter: boolean; onClearMatches: () => void;
 } & MobileSyncProps) {
   const t = STR[lang]; const search = useRef<HTMLInputElement>(null);
   useEffect(() => { if (focus) search.current?.focus(); }, [focus]);
   return <><MobileHeader title={t.library} count={`${total} ${t.books}`}><MobileSyncButton onSync={onSync} syncing={syncing} syncBusy={syncBusy} progress={progress} lang={lang} /><button className="iconbtn" onClick={onAdd} disabled={adding} aria-label={t.addBooks}><Icon name="plus" size={20} /></button></MobileHeader>
-    <MobileSyncProgress syncing={syncing} progress={progress} lang={lang} />
+    <MobileSyncProgress syncing={syncing} progress={progress} meta={meta} lang={lang} />
     <main className="mobile-content mobile-library"><label className="search"><Icon name="search" size={18} /><input ref={search} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.searchPlaceholder} aria-label={t.searchPlaceholder} /></label>
       <div className="mobile-chips">{matchFilter && <button className="is-active mobile-match-filter" onClick={onClearMatches}>{t.matchChip}<Icon name="close" size={16} /></button>}<button className={!status && source === "all" ? "is-active" : ""} onClick={() => { setStatus(null); setSource("all"); }}>{t.all}</button>{(["reading", "unread", "finished", "abandoned"] as const).map((s) => <button key={s} className={status === s ? "is-active" : ""} onClick={() => setStatus(status === s ? null : s)}>{statusLabel(t, s)}</button>)}{mixed && (["local", "amazon"] as const).map((s) => <button key={s} className={source === s ? "is-active" : ""} onClick={() => setSource(source === s ? "all" : s)}>{s === "local" ? t.typeLocal : t.mobileKindle}</button>)}</div>
       <div className="mobile-library__tools"><div className="mobile-library__sort"><Icon name="sort" size={16} /><MobilePicker label={t.sortBy} value={sort} options={[{ value: "recent", label: t.sortRecent }, { value: "title", label: t.sortTitle }, { value: "author", label: t.sortAuthor }, { value: "progress", label: t.sortProgress }]} onChange={setSort} /></div><div className="seg">{(["grid", "list"] as const).map((v) => <button key={v} className={`seg__btn${(view === "list" ? "list" : "grid") === v ? " seg__btn--on" : ""}`} aria-label={v === "grid" ? t.viewGrid : t.viewList} aria-pressed={(view === "list" ? "list" : "grid") === v} onClick={() => setView(v)}><Icon name={v} size={18} /></button>)}</div></div>

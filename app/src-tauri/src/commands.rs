@@ -273,19 +273,22 @@ pub async fn sync_library(app: AppHandle) -> Result<usize, String> {
     );
 
     // Reading state per book — best-effort, sequential (low request frequency).
-    // The percentage needs the book's total length; we only have that for books
-    // already downloaded (cached). Un-cached books store the position only, and
-    // their percentage is filled in when the book is first opened.
+    // The percentage needs the book's total length: stored once the book was
+    // read, else from the downloaded file. A book still being downloaded (the
+    // covers and files are fetched meanwhile) keeps the position only, and
+    // `Db::fill_percents` turns it into a percentage when its length arrives.
     for (i, book) in books.iter().enumerate() {
         if let Ok(mut state) = client::reading_state(&creds_bundle, book).await {
-            if let Some(pos) = state.position {
-                if let Ok(bytes) = std::fs::read(books_dir.join(format!("{}.azw3", book.asin))) {
-                    state.percent = client::mobi_total_positions(&bytes)
-                        .filter(|t| *t > 0)
-                        .map(|t| ((pos as f64 / t as f64) * 100.0).clamp(0.0, 100.0));
-                }
-            }
             let db: State<Db> = app.state();
+            if let Some(pos) = state.position {
+                let total = db.text_length(&book.asin).or_else(|| {
+                    std::fs::read(books_dir.join(format!("{}.azw3", book.asin)))
+                        .ok()
+                        .and_then(|bytes| client::mobi_total_positions(&bytes))
+                        .filter(|t| *t > 0)
+                });
+                state.percent = total.map(|t| ((pos as f64 / t as f64) * 100.0).clamp(0.0, 100.0));
+            }
             let _ = db.upsert_reading_state(&state);
         }
         let _ = app.emit(
@@ -293,6 +296,8 @@ pub async fn sync_library(app: AppHandle) -> Result<usize, String> {
             serde_json::json!({"done": i + 1, "total": total}),
         );
     }
+    // Books whose length arrived while their position was being fetched.
+    let _ = app.state::<Db>().fill_percents();
 
     Ok(total)
 }
