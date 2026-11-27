@@ -11,7 +11,7 @@ import { YearShelf } from "./YearShelf";
 import { WeekDots } from "./WeekDots";
 
 /** Spines drawn in the Home yearly-goal row, however big the goal. */
-const MAX_SPINES = 12;
+const MAX_SPINES = 20;
 
 /**
  * The streak on Home: days in a row, what is left of today's goal, the week
@@ -67,14 +67,15 @@ export function HomeYearRow({ lang, summary, rows, onOpen }: { lang: Lang; summa
   const [mid, end] = after.split("{1}");
   return (
     <button className="mobile-year" onClick={onOpen}>
+      <span className="mobile-year__head">
+        <span className="mobile-year__title">{before}<span>{done}</span>{mid}{goal}{end}</span>
+        <Icon name="arrowR" size={18} />
+      </span>
+      {/* The whole width of the card, so the spines can be tall enough to read. */}
       <span className="mobile-year__spines" aria-hidden="true">
         <YearShelf compact asins={filled ? summary.finished_year_asins.slice(-filled) : []} goal={spines} rows={byAsin} books={{}} ariaLabel="" />
       </span>
-      <span className="mobile-year__text">
-        <span className="mobile-year__title">{before}<span>{done}</span>{mid}{goal}{end}</span>
-        <span className="mobile-year__sub">{isNewReader(summary) ? t.sxYearFresh : pace.behind > 0 ? fmt(t.sxBehind, pace.behind) : t.sxOnTrack} · {t.sxSeeStats}</span>
-      </span>
-      <Icon name="arrowR" size={18} />
+      <span className="mobile-year__sub">{isNewReader(summary) ? t.sxYearFresh : pace.behind > 0 ? fmt(t.sxBehind, pace.behind) : t.sxOnTrack} · {t.sxSeeStats}</span>
     </button>
   );
 }

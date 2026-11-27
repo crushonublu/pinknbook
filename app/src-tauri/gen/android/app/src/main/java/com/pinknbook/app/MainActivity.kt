@@ -252,6 +252,10 @@ class MainActivity : TauriActivity() {
     mainWebView = webView
     // Until the page draws, the web view shows its own background: the app's dark one, not white.
     webView.setBackgroundColor(android.graphics.Color.parseColor("#0f1115"))
+    // Android raises any text under 8px to 8px; the app sizes its own text (the tiny
+    // titles on the Home shelf's spines need less).
+    webView.settings.minimumFontSize = 1
+    webView.settings.minimumLogicalFontSize = 1
     super.onWebViewCreate(webView)
     val bridge = ReaderGestures(webView)
     webView.addJavascriptInterface(bridge, "PntomeReader")

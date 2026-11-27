@@ -6,8 +6,9 @@ import type { BookRef } from "./types";
 
 /** Book height on the shelf, before the per-book variation and the fit. */
 const BASE_H = 96;
-/** Book height of the compact (Home) shelf. */
-const COMPACT_H = 44;
+/** Book height of the compact (Home) shelf, and the title size that lets a title be read on its slim spines. */
+const COMPACT_H = 88;
+const COMPACT_TITLE_PX = 5;
 /** Gap between spines (as on the bookcase). */
 const GAP = 2;
 /** A paper book, or one no longer in the library, is a mid-width plain spine. */
@@ -108,7 +109,7 @@ export function YearShelf({ asins, goal, rows, books, ariaLabel, compact = false
               const h = Math.round(base * scale);
               return s.book ? (
                 <div key={s.key} className="scx-shelf__slot" title={s.book.row.title}>
-                  <Book3D row={s.book.row} look={s.book.look} mode="spine" height={h} coverTag={false} />
+                  <Book3D row={s.book.row} look={s.book.look} mode="spine" height={h} coverTag={false} titlePx={compact ? COMPACT_TITLE_PX : undefined} />
                 </div>
               ) : (
                 <i key={s.key} className="scx-shelf__empty" style={{ width: slotWidth(s, Math.round(h * heightFactor(s.asin))), height: Math.round(h * heightFactor(s.asin)) }} />

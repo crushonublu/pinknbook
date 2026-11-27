@@ -32,10 +32,12 @@ type Props = {
   coverTag?: boolean;
   /** Front-board image override (preview of a picked file). */
   coverSrc?: string;
+  /** Title size on the spine in px, for spines too small for the usual one (the Home shelf). */
+  titlePx?: number;
 } & Omit<HTMLAttributes<HTMLDivElement>, "children">;
 
 export const Book3D = forwardRef<HTMLDivElement, Props>(function Book3D(
-  { row, look, mode, height, exactHeight, turn, coverTag = true, coverSrc, className = "", style, ...rest },
+  { row, look, mode, height, exactHeight, turn, coverTag = true, coverSrc, titlePx, className = "", style, ...rest },
   ref,
 ) {
   const h = Math.round(height * (exactHeight ? 1 : heightFactor(row.asin)));
@@ -51,7 +53,7 @@ export const Book3D = forwardRef<HTMLDivElement, Props>(function Book3D(
     ...(mode === "free" ? { "--turn": `${turn ?? -30}deg` } : null),
     ...style,
   } as CSSProperties;
-  const titleSize = Math.max(8, Math.min(13, t * 0.42));
+  const titleSize = titlePx ?? Math.max(8, Math.min(13, t * 0.42));
   return (
     <div
       ref={ref}
