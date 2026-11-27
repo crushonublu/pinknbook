@@ -5,7 +5,8 @@ import { addDays, daysBetween, fmt, minutesOf, names, weekStart } from "./format
 /**
  * Monday to Sunday of the week containing `today`: a day that reached the
  * goal is a filled disc with a flame, today shows its progress as a ring with
- * the minutes read, the rest are grey with the weekday letter.
+ * the minutes read, past days are plain grey and days to come an outline. The
+ * weekday is written once, under the disc.
  */
 export function WeekDots({ lang, today, goalSec, secOf }: { lang: Lang; today: string; goalSec: number; secOf: (day: string) => number }) {
   const t = STR[lang];
@@ -30,7 +31,7 @@ export function WeekDots({ lang, today, goalSec, secOf }: { lang: Lang; today: s
                 <span>{Math.floor(sec / 60)}′</span>
               </span>
             ) : (
-              <span className="weekdots__dot">{label}</span>
+              <span className={`weekdots__dot${when > 0 ? " weekdots__dot--later" : ""}`} />
             )}
             <span className="weekdots__label">{label}</span>
           </div>
