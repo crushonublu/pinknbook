@@ -1,6 +1,6 @@
 # Hướng dẫn sử dụng pntome
 
-pntome là app đọc và quản lý thư viện Kindle trên Windows. Tài liệu này đi qua từng phần của app theo thứ tự bạn sẽ gặp chúng.
+pntome là app đọc và quản lý thư viện Kindle trên Windows và Android. Tài liệu này đi qua từng phần của app theo thứ tự bạn sẽ gặp chúng; những chỗ khác trên điện thoại được ghi ở [mục 13](#13-dùng-trên-android).
 
 - [1. Bắt đầu](#1-bắt-đầu)
 - [2. Thư viện](#2-thư-viện)
@@ -12,10 +12,12 @@ pntome là app đọc và quản lý thư viện Kindle trên Windows. Tài li�
 - [8. Sơ đồ quan hệ](#8-sơ-đồ-quan-hệ)
 - [9. Dùng AI cho X-Ray](#9-dùng-ai-cho-x-ray)
 - [10. Gửi lên Kindle](#10-gửi-lên-kindle)
-- [11. Thống kê đọc và huy hiệu](#11-thống-kê-đọc-và-huy-hiệu)
-- [12. Phím tắt](#12-phím-tắt)
-- [13. Dữ liệu và quyền riêng tư](#13-dữ-liệu-và-quyền-riêng-tư)
-- [14. Câu hỏi thường gặp](#14-câu-hỏi-thường-gặp)
+- [11. Thống kê, chuỗi ngày đọc và huy hiệu](#11-thống-kê-chuỗi-ngày-đọc-và-huy-hiệu)
+- [12. Tổng kết tuần, tháng, năm](#12-tổng-kết-tuần-tháng-năm)
+- [13. Dùng trên Android](#13-dùng-trên-android)
+- [14. Phím tắt](#14-phím-tắt)
+- [15. Dữ liệu và quyền riêng tư](#15-dữ-liệu-và-quyền-riêng-tư)
+- [16. Câu hỏi thường gặp](#16-câu-hỏi-thường-gặp)
 
 ---
 
@@ -25,10 +27,14 @@ pntome là app đọc và quản lý thư viện Kindle trên Windows. Tài li�
 2. Sau khi đăng nhập, app đăng ký với Amazon như **một thiết bị Kindle mới** (tên thiết bị hiện trong menu Tài khoản, mục "Thiết bị này"). Bạn sẽ thấy thiết bị này trong trang *Manage Your Content and Devices* của Amazon.
 3. Bấm **Đồng bộ thư viện** (biểu tượng mũi tên tròn trên thanh tiêu đề) để kéo sách về. Ảnh bìa và thông tin sách được lấy dần ở chế độ nền.
 
+Không có tài khoản Amazon, hoặc chỉ muốn đọc EPUB trên máy? Bấm **Dùng không cần đăng nhập** ở màn hình đầu. App chạy ở **chế độ khách**; bạn có thể đăng nhập Amazon bất cứ lúc nào từ menu Tài khoản.
+
 Menu **Tài khoản** (biểu tượng người ở góc phải) có:
 - **Ngôn ngữ:** Tiếng Việt hoặc English.
 - **Giao diện:** sáng hoặc tối.
-- **Đăng xuất.**
+- **Sách trên máy:** dung lượng, thư mục tự thêm sách mới, xuất/nhập thư viện (xem [Sách trên máy](#sách-trên-máy)).
+- **Kiểm tra cập nhật** (bản Windows): app cũng tự kiểm tra lúc mở và đề nghị **Cập nhật ngay** khi có bản mới.
+- **Đăng xuất:** về chế độ khách, chọn giữ hay xoá dữ liệu Kindle trên máy.
 
 ## 2. Thư viện
 
@@ -56,9 +62,20 @@ Bấm **Chi tiết** (hoặc phím I) để xem giới thiệu, ngôn ngữ, th�
 
 Mọi thay đổi chỉ lưu trong app, không sửa sách trên Amazon.
 
+Trang chi tiết còn có:
+- **Thông tin Goodreads:** điểm, số lượt đánh giá, thể loại, mô tả đầy đủ và nhận xét nổi bật; nút **Dịch** đưa nhận xét sang tiếng Việt.
+- **Thể loại** dùng cho thống kê: mặc định **Tự động** (lấy từ Goodreads, rồi tới chủ đề Amazon). Chọn một trong 17 nhóm nếu app đoán sai, hoặc chọn lại Tự động.
+
 ### Sách mua và tài liệu
 - **Tài liệu** (sách bạn gửi qua Send to Kindle) mở trong trình đọc của app.
 - **Sách mua** có DRM: app không gỡ DRM, nên những cuốn này đọc trên Kindle.
+
+### Sách trên máy
+App đọc được file **EPUB** trên máy, có hay không đăng nhập Amazon.
+- Thêm sách bằng nút **+** trên thanh tiêu đề, kéo thả file hoặc cả thư mục vào cửa sổ, hoặc đặt **thư mục tự thêm sách mới** trong *Tài khoản → Sách trên máy*. App sao chép sách vào thư mục dữ liệu riêng, đọc tên, tác giả và bìa, và báo rõ file trùng, có DRM hoặc hỏng.
+- Sách trên máy có đủ đánh dấu, ghi chú, dấu trang, từ điển, X-Ray, sổ từ và thống kê như tài liệu Kindle.
+- Có thể **liên kết** một cuốn trên máy với bản Kindle cùng tên (gộp thành một thẻ), hoặc gửi nó lên Kindle từ trang sách.
+- *Sách trên máy* trong menu Tài khoản cho **xuất/nhập** cả thư viện để chuyển sang máy khác.
 
 ## 3. Đọc sách
 
@@ -232,18 +249,57 @@ Bấm nút **Gửi lên Kindle** (mũi tên lên) trên thanh tiêu đề.
 3. Chọn **máy Kindle** sẽ nhận sách (lựa chọn này được nhớ cho lần sau). Không chọn máy nào thì sách chỉ vào thư viện Kindle.
 4. Bấm **Gửi**. Amazon chuyển đổi file rồi đưa vào thư viện; sách tự xuất hiện ở kệ **Chưa đọc** khi xong.
 
-## 11. Thống kê đọc và huy hiệu
+## 11. Thống kê, chuỗi ngày đọc và huy hiệu
 
 ![Thống kê đọc](images/stats.png)
 
-Bấm biểu tượng **ngọn lửa** trên thanh tiêu đề (con số là chuỗi ngày hiện tại).
-- **Hôm nay:** số phút đã đọc so với **mục tiêu mỗi ngày** (đặt ở góc trên phải).
-- **Chuỗi ngày:** số ngày liên tiếp đạt mục tiêu. Mỗi tuần có **1 ngày nghỉ**: lỡ một ngày vẫn giữ chuỗi.
-- **Tổng thời gian đọc**, **sách đã đọc xong**, **bản đồ nhiệt 12 tháng**, biểu đồ **30 ngày gần đây** và **sách đọc nhiều nhất**.
-- **Ước lượng từ Kindle:** bật để cộng cả thời gian đọc trên máy Kindle và Kindle PC. App ước lượng từ quãng vị trí đọc thay đổi giữa các lần đồng bộ.
+Ngọn lửa trên thanh tiêu đề cho biết **chuỗi ngày** hiện tại; vòng quanh nó là phần mục tiêu hôm nay đã đọc. Bấm vào để mở **popover chuỗi**: phút đã đọc hôm nay, số phút còn thiếu, bảy ngày trong tuần, chuỗi dài nhất, lá chắn tuần này và nút **Mở thống kê**.
+
+**Thời gian được tính thế nào**
+- **Trong pntome:** thời gian bạn thật sự đọc (bỏ qua lúc để yên quá 3 phút).
+- **Trên Kindle (ước tính):** khi app mở, cứ 30 phút app xem vị trí đọc trên Kindle đã đi xa bao nhiêu và đổi ra phút theo tốc độ đọc của bạn. Amazon chỉ cho biết vị trí cuối, nên phần đọc trước khi cài pntome không có. Tắt bằng **Ước tính thời gian đọc trên Kindle**.
+- **Sách giấy:** bấm **Thêm thời gian đọc sách giấy** (khi xem một ngày trên lịch; hoặc nút **Sách giấy** ở đầu trang Thống kê trên máy tính, mục Sách giấy trong **Cài đặt thống kê** trên điện thoại), chọn ngày (hôm nay hoặc 7 ngày trước), chọn sách trong thư viện hoặc gõ tên sách giấy, rồi nhập số phút. Mỗi ngày có danh sách các lần nhập để xoá nếu nhầm.
+- Một ngày tính từ **4 giờ sáng**, nên đọc khuya vẫn tính cho tối hôm trước.
+
+**Chuỗi và mục tiêu**
+- **Chuỗi ngày:** số ngày liên tiếp đạt **mục tiêu mỗi ngày**. Mỗi tuần có **1 lá chắn**: lỡ một ngày vẫn giữ chuỗi.
+- **Mục tiêu năm:** số cuốn muốn đọc xong trong năm, vẽ thành kệ sách bằng gáy thật của những cuốn đã xong, chỗ còn thiếu là khung nét đứt. App cho biết bạn đang đúng tiến độ hay chậm mấy cuốn.
+- Đổi hai mục tiêu và bật/tắt ước tính Kindle ở đầu trang Thống kê.
+
+**Trang Thống kê** (chọn **Tất cả** hoặc từng năm):
+- **Hồ sơ đọc:** một hai câu tóm tắt thói quen (cú đêm hay dậy sớm, thể loại chính, so với kỳ trước). Đã có API key AI thì có thêm nút **Viết lại bằng AI**.
+- **Hôm nay** và tuần này, **mục tiêu năm**.
+- **Lịch chuỗi:** chuỗi dài nhất, mỗi ngày đã đọc hiện bìa cuốn đọc nhiều nhất hôm đó; ô màu nhấn là các ngày của chuỗi đang giữ. Dải 12 tháng bên dưới để chọn tháng. Bấm một ngày để xem đọc bao lâu (trong app, Kindle, sách giấy), những cuốn nào, bao nhiêu đánh dấu, ghi chú và từ mới.
+- **Thời gian đọc** 7 hoặc 30 ngày, **sách đọc xong theo tháng**, **sách đọc lâu nhất**, **thể loại** (biểu đồ tròn, 5 nhóm lớn nhất), **giờ hay đọc** trong ngày.
 - **Huy hiệu:** 13 huy hiệu chia bốn nhóm (thời gian, sách, đánh dấu, thói quen), mỗi huy hiệu có các cấp Đồng, Bạc, Vàng, Kim cương.
 
-## 12. Phím tắt
+Thể loại lấy từ Goodreads, nên những cuốn chưa có thông tin Goodreads hiện là "chưa rõ". App tự tra dần vài cuốn mỗi lần ở chế độ nền; bạn cũng có thể chọn thể loại ở trang chi tiết sách.
+
+## 12. Tổng kết tuần, tháng, năm
+
+Từ **18 giờ ngày cuối tuần** (Chủ nhật), **ngày cuối tháng** hoặc **31/12**, Trang chủ có thẻ "Tổng kết … đã sẵn sàng". Trước khi kỳ kết thúc, số liệu ghi là *tạm tính*; sang kỳ mới, số liệu được chốt và lưu lại. Thẻ tuần hiện tới hết tuần sau, thẻ tháng tới ngày 7, thẻ năm tới hết tháng 1. Bấm × để ẩn thẻ.
+
+Trong màn tổng kết:
+- **Màu thẻ** (sáu màu), **Đổi nền** (nền hình khối sinh ngẫu nhiên), khổ **Story** hoặc **Bài đăng**.
+- **Sticker:** app tự đặt sticker 3D theo số liệu (ngọn lửa cho chuỗi dài, mặt trăng cho cú đêm, cúp khi đạt mục tiêu…). Kéo để di chuyển; trên máy tính dùng tay nắm ở góc để xoay và phóng to, trên điện thoại dùng hai ngón. **Thêm sticker** mở khay icon và huy hiệu của bạn; **Xếp lại tự động** đặt lại từ đầu; có nút xoá và hoàn tác.
+- Tổng kết năm có sáu trang: tổng quan, sách đã đọc, thể loại, chuỗi và lịch, giờ đọc, huy hiệu.
+- **Lưu ảnh:** máy tính mở hộp thoại lưu file PNG; Android lưu vào Ảnh (thư mục Pictures/pntome, cần Android 10).
+- **Sao chép** (máy tính) hoặc **Chia sẻ…** (Android) để gửi ảnh sang app khác.
+
+Mọi bản đã chốt nằm ở mục **Các bản tổng kết** cuối trang Thống kê (trên máy tính còn có nút **Tổng kết** ở đầu trang), xếp theo năm; xoá được nếu không cần.
+
+## 13. Dùng trên Android
+
+Bản Android có cùng thư viện, trình đọc, từ điển, X-Ray, thống kê và tổng kết, với giao diện cho điện thoại:
+- **Tab dưới:** Trang chủ, Thư viện, Sổ từ, Tài khoản. Trang chủ có thẻ chuỗi ngày, mục tiêu năm, thẻ tổng kết và cuốn đang đọc.
+- **Trang sách** trượt lên từ dưới, có nút **Tiếp tục đọc**.
+- **Trình đọc toàn màn hình:** chạm giữa để hiện thanh, chạm hai bên hoặc vuốt để lật trang; kiểu lật Curl, Trượt hoặc không hiệu ứng. Nút **Menu** góc dưới phải mở mục lục, tìm, X-Ray, từ đã lưu và sáu giao diện (Kindle, Giấy cũ, Thoáng, Đậm, Đêm, Rừng).
+- **Giữ một từ** để tra từ điển; **bôi đen một đoạn** để hiện thanh đánh dấu; chạm vào đoạn đã đánh dấu để sửa; chạm số chú thích để đọc chú thích.
+- Nút **Quay lại** của Android đóng bảng đang mở, rồi đóng sách, rồi về Trang chủ.
+- **Đăng nhập Amazon** mở trang đăng nhập của Amazon ngay trong app; hoặc dùng chế độ khách và thêm EPUB bằng trình chọn file của điện thoại.
+- Chưa có trên Android: Gửi lên Kindle, kéo thả, thư mục tự thêm sách, xuất thư viện. App Android chưa tự cập nhật: tải APK mới ở trang Releases và cài đè lên bản cũ.
+
+## 14. Phím tắt
 
 | Ở đâu | Phím | Việc |
 |---|---|---|
@@ -262,22 +318,29 @@ Bấm biểu tượng **ngọn lửa** trên thanh tiêu đề (con số là chu
 | Kệ sách | I | Xem chi tiết sách |
 | Sơ đồ quan hệ | Cuộn chuột | Phóng to / thu nhỏ |
 | Sơ đồ quan hệ | Esc | Đóng bảng bên, rồi đóng sơ đồ |
+| Tổng kết (sticker đang chọn) | Phím mũi tên (Shift: bước lớn) | Dời sticker |
+| Tổng kết (sticker đang chọn) | [ / ] · + / - | Xoay · phóng to / thu nhỏ |
+| Tổng kết (sticker đang chọn) | Delete · Esc | Xoá sticker · bỏ chọn |
 
-## 13. Dữ liệu và quyền riêng tư
+## 15. Dữ liệu và quyền riêng tư
 
 - **Dữ liệu trên máy:** `%APPDATA%\com.pinknbook.app`.
-  - `pinknbook.sqlite`: thư viện, vị trí đọc, đánh dấu, dấu trang, sổ từ, X-Ray, thống kê.
-  - `books\`: tài liệu đã tải.
+  - `pinknbook.sqlite`: thư viện, vị trí đọc, đánh dấu, dấu trang, sổ từ, X-Ray, thống kê, các bản tổng kết.
+  - `books\`: tài liệu đã tải và sách trên máy.
   - `covers\`: ảnh bìa.
   - `dict\`: từ điển offline.
-- **Khoá đăng nhập Amazon** và **API key AI** nằm trong **Windows Credential Manager**.
+- Trên Android, dữ liệu nằm trong bộ nhớ riêng của app và không được sao lưu lên mây.
+- **Khoá đăng nhập Amazon** và **API key AI** nằm trong **Windows Credential Manager** (trên Android: kho bảo mật dùng Keystore).
 - **Đăng xuất** xoá khoá thiết bị khỏi máy. Muốn huỷ hẳn thiết bị pntome khỏi tài khoản, vào *Manage Your Content and Devices* trên Amazon.
-- App chỉ nói chuyện với Amazon. Ngoài ra chỉ có mấy trường hợp sau:
+- Ngoài Amazon, app chỉ kết nối trong mấy trường hợp sau:
   - tải dữ liệu từ điển (một lần);
   - mở tab Wiktionary / Wikipedia;
-  - chạy AI khi bạn bấm nút.
+  - tra Goodreads cho sách bạn mở, và vài cuốn bạn mới đọc ở chế độ nền (để lấy thể loại);
+  - dịch nhận xét Goodreads khi bạn bấm Dịch;
+  - kiểm tra bản cập nhật trên GitHub (bản Windows);
+  - chạy AI khi bạn bấm nút (sơ đồ quan hệ, hoặc Viết lại bằng AI ở hồ sơ đọc, chỉ gửi vài con số).
 
-## 14. Câu hỏi thường gặp
+## 16. Câu hỏi thường gặp
 
 **Sao không mở được sách mua?**
 Sách mua trên Kindle Store có DRM, và app không gỡ DRM. Trình đọc dành cho tài liệu cá nhân (gửi qua Send to Kindle hoặc nút Gửi lên Kindle).
@@ -290,6 +353,15 @@ Mở tên đó và đổi loại. Trong sơ đồ quan hệ, bấm vào người
 
 **AI báo "câu trả lời quá dài"?**
 App đã tự chia nhỏ và thử lại; phần làm được vẫn được lưu. Bấm **Cập nhật nhãn AI** để chạy tiếp phần còn lại.
+
+**Sao thống kê không có thời gian tôi đọc Kindle trước đây?**
+Amazon chỉ cho biết vị trí đọc cuối của mỗi cuốn, không cho biết bạn đọc ngày nào. App chỉ ước tính được phần đọc trên Kindle kể từ khi pntome bắt đầu theo dõi, và chỉ khi app được mở (30 phút một lần, cho 10 cuốn đọc gần nhất). Đọc sách giấy thì tự nhập bằng **Thêm thời gian đọc sách giấy**.
+
+**Nhiều sách "chưa rõ thể loại"?**
+Thể loại lấy từ Goodreads; app tra dần vài cuốn mỗi lần. Mở trang chi tiết sách để tra ngay, hoặc tự chọn thể loại ở đó.
+
+**Lưu ảnh tổng kết báo cần Android 10?**
+Lưu vào Ảnh dùng cách lưu của Android 10 trở lên. Trên máy cũ hơn, dùng **Chia sẻ…** rồi chọn app lưu ảnh.
 
 **AI gộp nhầm hai người?**
 Bấm **Hoàn tác** ở thông báo trên sơ đồ, hoặc mở người đó trong X-Ray và bấm × ở cách gọi bị gộp nhầm. Cặp đã tách sẽ không bị tự gộp lại.

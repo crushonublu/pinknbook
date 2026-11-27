@@ -1,6 +1,6 @@
 # pntome
 
-**Thư viện Kindle của bạn trên Windows, độc lập.** pntome đăng nhập tài khoản Amazon như một thiết bị Kindle riêng, nên không cần cài app Kindle. App bày sách lên kệ 3D và mở tài liệu cá nhân trong trình đọc riêng. Trình đọc có đánh dấu, từ điển offline và X-Ray nhân vật kèm sơ đồ quan hệ.
+**Thư viện Kindle của bạn trên Windows và Android, độc lập.** pntome đăng nhập tài khoản Amazon như một thiết bị Kindle riêng, nên không cần cài app Kindle; không có tài khoản vẫn đọc được file EPUB trên máy tính hay điện thoại. App bày sách lên kệ 3D và mở tài liệu cá nhân trong trình đọc riêng. Trình đọc có đánh dấu, từ điển offline và X-Ray nhân vật kèm sơ đồ quan hệ. Thống kê theo dõi chuỗi ngày đọc và mục tiêu, còn các bản tổng kết tuần, tháng, năm biến chúng thành ảnh để chia sẻ.
 
 [English](README.md) · [Hướng dẫn sử dụng](docs/huong-dan-su-dung.md) · [Phát triển](docs/development.md)
 
@@ -17,6 +17,8 @@
 - Tuỳ chỉnh từng cuốn: tên, tác giả, bìa (bìa gốc, bìa chữ, ảnh của bạn) và gáy sách (màu, chất liệu, kiểu chữ, độ dày).
 - Trạng thái đọc có thể đẩy lên Kindle: đánh dấu "chưa đọc" hay "đã xong" sẽ đưa vị trí đọc trên Kindle về đầu hoặc cuối sách.
 - Gửi file EPUB vào thư viện và các máy Kindle (Send to Kindle).
+- Dùng không cần tài khoản Amazon (chế độ khách). Thêm file EPUB trên máy bằng nút +, kéo thả, hoặc để app theo dõi một thư mục; app đọc tên, tác giả, bìa và báo file trùng, có DRM hoặc hỏng. Sách trên máy có thể liên kết với bản Kindle cùng tên, và cả thư viện trên máy xuất/nhập được để chuyển sang máy khác.
+- Trang sách có thông tin Goodreads: điểm, số lượt đánh giá, thể loại, mô tả đầy đủ và nhận xét nổi bật, kèm nút dịch nhận xét sang tiếng Việt.
 
 **Trình đọc** (cho tài liệu cá nhân)
 - Lật trang có hiệu ứng cuộn giấy, bằng phím mũi tên hoặc cuộn chuột. Đọc một hoặc hai trang; màu trang giấy trắng, giấy cũ, xám tối hoặc đen; chỉnh kiểu chữ, cỡ chữ, giãn dòng, lề.
@@ -37,9 +39,21 @@
 - Tuỳ chọn dùng AI (Claude hoặc DeepSeek, key của bạn) để ghi nhãn quan hệ và viết giới thiệu nhân vật. App báo chi phí trước và chỉ gửi đoạn ngắn trong phần đã đọc. Những tên AI cho là cùng một người được tự gộp, và có nút hoàn tác.
 - Rê chuột vào tên trong sách là hiện thẻ giới thiệu. Đổi tên, gộp, tách, đổi loại hay ẩn đều được.
 
-**Thống kê đọc**
-- Mục tiêu mỗi ngày và chuỗi ngày, tổng thời gian, bản đồ nhiệt 12 tháng, sách đọc nhiều nhất và 13 huy hiệu.
-- Có ước lượng cả thời gian đọc trên máy Kindle.
+**Thống kê và chuỗi ngày đọc**
+- Đếm thời gian đọc trong app, ước lượng thời gian đọc trên máy và app Kindle, cộng cả thời gian đọc sách giấy bạn tự nhập.
+- Mục tiêu mỗi ngày và chuỗi ngày (mỗi tuần được lỡ một ngày), mục tiêu số cuốn trong năm vẽ bằng gáy thật của những cuốn đã đọc xong, và lịch chuỗi hiện bìa cuốn sách đọc mỗi ngày.
+- Thời gian đọc 7 hoặc 30 ngày, sách đọc xong theo tháng, sách đọc lâu nhất, thể loại (17 nhóm, lấy từ Goodreads và Amazon, đổi được cho từng cuốn), giờ hay đọc, một câu "hồ sơ đọc" và 13 huy hiệu. Xem theo từng năm hoặc tất cả.
+- Trên máy tính, ngọn lửa trên thanh tiêu đề mở popover chuỗi; bấm một ngày trên lịch để xem hôm đó đọc gì.
+
+**Tổng kết tuần, tháng, năm**
+- Từ tối ngày cuối tuần, cuối tháng hay cuối năm, một thẻ tổng kết chờ sẵn ở Trang chủ; các bản cũ vẫn xem lại được trong Thống kê.
+- Mỗi thẻ có nền sinh tự động, sticker 3D chọn theo số liệu của bạn (kéo, xoay, phóng to, thêm bớt được), sáu màu, khổ Story hoặc Bài đăng. Tổng kết năm có sáu trang.
+- Lưu thành ảnh, sao chép (máy tính) hoặc chia sẻ (Android).
+
+**Android**
+- Giao diện điện thoại với các tab dưới (Trang chủ, Thư viện, Sổ từ, Tài khoản), trang sách dạng bảng trượt lên và trình đọc toàn màn hình: chạm hai bên, vuốt hoặc lật trang cuộn giấy theo ngón tay, sáu theme đọc.
+- Giữ một từ để tra từ điển, bôi đen một đoạn để đánh dấu, chạm số chú thích để đọc chú thích.
+- Đăng nhập Amazon ngay trong app, hoặc dùng chế độ khách với file EPUB trên điện thoại.
 
 ## Ảnh chụp
 
@@ -54,9 +68,11 @@
 
 ## Cài đặt và chạy
 
-pntome là app [Tauri 2](https://tauri.app) (Rust + React), chạy trên **Windows 10/11** có WebView2 (Windows 11 có sẵn).
+Tải bộ cài Windows (`pntome_x.y.z_x64-setup.exe`) hoặc file APK Android ở [Releases](https://github.com/crushonublu/pinknbook/releases). Bản Windows tự cập nhật; trên Android, cài APK mới đè lên bản cũ.
 
-Cần [Node.js](https://nodejs.org) 20 trở lên và [Rust](https://rustup.rs) (bản stable).
+pntome là app [Tauri 2](https://tauri.app) (Rust + React), chạy trên **Windows 10/11** có WebView2 (Windows 11 có sẵn) và **Android 7** trở lên (lưu ảnh vào thư viện ảnh cần Android 10).
+
+Muốn tự build, cần [Node.js](https://nodejs.org) 20 trở lên và [Rust](https://rustup.rs) (bản stable).
 
 ```bash
 cd app
@@ -65,17 +81,18 @@ npm run tauri dev      # chạy thử
 npm run tauri build    # đóng gói bộ cài (app/src-tauri/target/release/bundle)
 ```
 
-Lần đầu mở app, bấm **Đăng nhập Amazon**, rồi **Đồng bộ thư viện**. Phần còn lại xem trong [hướng dẫn sử dụng](docs/huong-dan-su-dung.md).
+Lần đầu mở app, bấm **Đăng nhập Amazon**, rồi **Đồng bộ thư viện**, hoặc chọn dùng không cần đăng nhập. Phần còn lại xem trong [hướng dẫn sử dụng](docs/huong-dan-su-dung.md); cách build APK Android ở [docs/release.md](docs/release.md).
 
 ## Dữ liệu của bạn
 
-- **Trên máy bạn:** thư viện, vị trí đọc, đánh dấu, sổ từ, X-Ray và thống kê nằm trong `%APPDATA%\com.pinknbook.app`, cùng sách đã tải, ảnh bìa và từ điển.
-- **Trong Windows Credential Manager:** khoá thiết bị Amazon và API key AI.
-- **Gửi cho nhà cung cấp AI:** không có gì, trừ khi bạn bấm nút AI trong sơ đồ quan hệ. Khi đó app chỉ gửi đoạn ngắn trong phần bạn đã đọc, sau khi báo chi phí ước tính.
+- **Trên máy bạn:** thư viện, vị trí đọc, đánh dấu, sổ từ, X-Ray, thống kê và các bản tổng kết nằm trong `%APPDATA%\com.pinknbook.app`, cùng sách đã tải, ảnh bìa và từ điển. Trên Android, dữ liệu nằm trong bộ nhớ riêng của app và không được sao lưu lên mây.
+- **Trong Windows Credential Manager** (trên Android là kho bảo mật dùng Keystore): khoá thiết bị Amazon và API key AI.
+- **Goodreads:** app tra những cuốn bạn mở, và vài cuốn bạn mới đọc ở chế độ nền, để hiện thông tin và thể loại.
+- **Gửi cho nhà cung cấp AI:** không có gì, trừ khi bạn bấm nút AI: trong sơ đồ quan hệ, hoặc "Viết lại bằng AI" ở hồ sơ đọc. Sơ đồ chỉ gửi đoạn ngắn trong phần bạn đã đọc, sau khi báo chi phí ước tính; hồ sơ đọc chỉ gửi vài con số.
 
 ## Công nghệ
 
-Tauri 2 · Rust (rusqlite, reqwest, rsa) · React 19 + TypeScript + Vite · [foliate-js](https://github.com/johnfactotum/foliate-js) (hiển thị sách, MIT) · dữ liệu Wiktionary qua [kaikki.org](https://kaikki.org) (CC BY-SA) · [Open English WordNet](https://en-word.net) (CC BY 4.0) · font Literata · icon Reicon.
+Tauri 2 · Rust (rusqlite, reqwest, rsa) · React 19 + TypeScript + Vite · [foliate-js](https://github.com/johnfactotum/foliate-js) (hiển thị sách, MIT) · dữ liệu Wiktionary qua [kaikki.org](https://kaikki.org) (CC BY-SA) · [Open English WordNet](https://en-word.net) (CC BY 4.0) · font Literata · icon Reicon · sticker 3D của [3dicons / Reicon](https://3dicons.reicon.dev).
 
 ## Giấy phép
 
