@@ -7,6 +7,19 @@ interface CurlDrag {
   endDrag: (cancelled: boolean) => void;
 }
 
+/** Main-document margins share page zones, but never own host/iframe events. */
+export function acceptReaderSurfaceEvent(event: Event, host: EventTarget, immersive: boolean, bounds: DOMRect | (() => DOMRect)) {
+  const path = event.composedPath();
+  if (path.some((node) => (node as Element).localName === "iframe")) return false;
+  if (path.includes(host)) return true;
+  if (!immersive) return false;
+  const rect = typeof bounds === "function" ? bounds() : bounds;
+  const e = event as MouseEvent & TouchEvent;
+  const point = e.touches?.[0] ?? e.changedTouches?.[0] ?? e;
+  return point.clientX >= rect.left && point.clientX <= rect.right &&
+    point.clientY >= rect.top && point.clientY <= rect.bottom;
+}
+
 export function watchReaderGestures(target: EventTarget, options: {
   bounds: () => DOMRect;
   /** Coordinates are local to the event target; Curl and zones use the window. */
@@ -23,6 +36,7 @@ export function watchReaderGestures(target: EventTarget, options: {
 }) {
   let start: { x: number; y: number; time: number; blocked: boolean; swiping: boolean; curl: CurlDrag | null; consumed: boolean; busyAtStart: boolean } | null = null;
   let suppressClickUntil = 0;
+  let offsetX = 0, offsetY = 0;
   const { point, selected } = options;
   const cleanups: (() => void)[] = [];
   const on = <K extends keyof DocumentEventMap>(type: K, listener: (event: DocumentEventMap[K]) => void, config?: AddEventListenerOptions, source = target) => {
@@ -44,6 +58,8 @@ export function watchReaderGestures(target: EventTarget, options: {
     const t = e.touches[0];
     if (e.touches.length !== 1) { cancelDrag(); suppressClickUntil = performance.now() + 700; return; }
     if (start) cancelDrag();
+    const origin = point(t.clientX, t.clientY);
+    offsetX = origin.x - t.clientX; offsetY = origin.y - t.clientY;
     start = { x: t.clientX, y: t.clientY, time: performance.now(), blocked: selected() || interactive(e.target, t.clientX, t.clientY), swiping: false, curl: null, consumed: false, busyAtStart: !!options.busy?.() };
   }, { capture: true, passive: true });
   on("touchmove", (e) => {
@@ -60,8 +76,8 @@ export function watchReaderGestures(target: EventTarget, options: {
         const curl = options.drag?.();
         if (curl) {
           start.consumed = true;
-          const origin = point(start.x, start.y);
-          if (curl.beginDrag(t.clientX < start.x ? 1 : -1, origin.x, origin.y, start.time)) {
+          const originX = start.x + offsetX, originY = start.y + offsetY;
+          if (curl.beginDrag(t.clientX < start.x ? 1 : -1, originX, originY, start.time)) {
             start.curl = curl;
             options.onDrag?.();
           }
@@ -72,8 +88,7 @@ export function watchReaderGestures(target: EventTarget, options: {
     }
     if (start.curl) {
       e.preventDefault();
-      const p = point(t.clientX, t.clientY);
-      start.curl.moveDrag(p.x, p.y);
+      start.curl.moveDrag(t.clientX + offsetX, t.clientY + offsetY);
     }
   }, { capture: true, passive: false });
   on("touchend", (e) => {

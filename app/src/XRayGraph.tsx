@@ -1,8 +1,11 @@
+import { isAndroid } from "./platform";
+import { MobileReaderSheet } from "./mobile/MobileReaderSheet";
+import { useMobileDismiss } from "./mobile/back";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { STR, type Lang } from "./i18n";
 import { Icon } from "./icons";
-import { mergeAsOne, TYPE_COLOR, TYPE_ICON, type XrayState } from "./XRay";
+import { XRayDetail, mergeAsOne, TYPE_COLOR, TYPE_ICON, type XrayState } from "./XRay";
 import { chunkTexts, links, mentionContexts, pairKey, upTo, type Entity, type Link, type XrEdits, type XrType } from "./xrayIndex";
 import { KIND_ORDER, bounds, initials, layout, nodeBoxes, placeLabels, relKind, shortLabel, type GNode, type LabelItem, type RelKind } from "./graphLayout";
 
@@ -39,6 +42,8 @@ export function XRayGraph({
   provider,
   onClose,
   onOpenEntity,
+  formatPos,
+  onGo,
 }: {
   lang: Lang;
   x: XrayState;
@@ -48,8 +53,12 @@ export function XRayGraph({
   provider: AiProvider;
   onClose: () => void;
   onOpenEntity: (key: string) => void;
+  formatPos: (f: number) => string;
+  onGo: (m: import("./xrayIndex").Mention) => void;
 }) {
   const t = STR[lang];
+  const [settings, setSettings] = useState(false);
+  const [entityKey, setEntityKey] = useState<string | null>(null);
   const people = useMemo(() => x.ents.filter((e) => e.type === "person"), [x.ents]);
   const [count, setCount] = useState(() => Math.min(20, people.length));
   const [focus, setFocus] = useState<string | null>(null);
@@ -69,6 +78,17 @@ export function XRayGraph({
   const kept = useRef(new Map<string, { x: number; y: number }>());
   const gesture = useRef<Gesture | null>(null);
 
+  useMobileDismiss(isAndroid, () => {
+    if (document.querySelector("[data-mobile-picker]")) return;
+    if (settings) setSettings(false);
+    else if (entityKey) setEntityKey(null);
+    else if (edgeKey) setEdgeKey(null);
+    else if (focus) setFocus(null);
+    else onClose();
+  });
+  const suppressClick = useRef(false);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ distance: number; x: number; y: number; vp: Viewport } | null>(null);
   const shown = people.slice(0, Math.max(2, count));
   const shownKey = shown.map((e) => e.key).join("|");
   const allLinks = useMemo(() => links(x.ents, x.limit), [x.ents, x.limit]);
@@ -103,7 +123,7 @@ export function XRayGraph({
     return () => ro.disconnect();
   }, []);
 
-  const nameFont = (big: boolean) => `${big ? 700 : 600} ${big ? 14 : 12.5}px ${font}`;
+  const nameFont = (big: boolean) => `${big ? 700 : 600} ${isAndroid ? 14 : big ? 14 : 12.5}px ${font}`;
   const pillFont = `500 12px ${font}`;
 
   // Lay people out once per set of people; dragging moves them by hand.
@@ -177,7 +197,7 @@ export function XRayGraph({
   }, [edgeKey, focus, onClose]);
 
   // Screen positions (names and labels keep their size whatever the zoom).
-  const S = (n: GNode) => ({ x: vp.tx + vp.k * n.x, y: vp.ty + vp.k * n.y, r: Math.max(6, n.r * vp.k) });
+  const S = (n: GNode) => ({ x: vp.tx + vp.k * n.x, y: vp.ty + vp.k * n.y, r: Math.max(isAndroid ? 16 : 6, n.r * vp.k) });
   const active = hover ?? focus;
   const near = active ? new Set([active, ...edges.filter((l) => l.a === active || l.b === active).flatMap((l) => [l.a, l.b])]) : null;
   const visible = edges.filter((l) => !off.has(kindOf.get(l.key)!));
@@ -241,17 +261,41 @@ export function XRayGraph({
     e.stopPropagation();
     svgRef.current?.setPointerCapture(e.pointerId);
     const p = point(e);
+    if (!pointers.current.size) suppressClick.current = false;
+    if (isAndroid && e.pointerType === "touch") {
+      pointers.current.set(e.pointerId, p);
+      if (pointers.current.size === 2) {
+        const [a, b] = [...pointers.current.values()];
+        pinch.current = { distance: Math.hypot(b.x - a.x, b.y - a.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, vp };
+        gesture.current = null;
+        suppressClick.current = true;
+        return;
+      }
+    }
     gesture.current = node
       ? { kind: "node", node, sx: p.x, sy: p.y, ox: node.x, oy: node.y, moved: false }
       : { kind: "pan", sx: p.x, sy: p.y, ox: vp.tx, oy: vp.ty, moved: false };
   };
   const onMove = (e: React.PointerEvent) => {
+    if (isAndroid && pointers.current.has(e.pointerId)) {
+      pointers.current.set(e.pointerId, point(e));
+      const initial = pinch.current;
+      if (initial && pointers.current.size === 2) {
+        const [a, b] = [...pointers.current.values()];
+        const box = svgRef.current!.getBoundingClientRect();
+        const k = Math.max(.3, Math.min(3, initial.vp.k * Math.hypot(b.x - a.x, b.y - a.y) / Math.max(1, initial.distance)));
+        const factor = k / initial.vp.k;
+        setVp({ k, tx: (a.x + b.x) / 2 - box.left - (initial.x - box.left - initial.vp.tx) * factor, ty: (a.y + b.y) / 2 - box.top - (initial.y - box.top - initial.vp.ty) * factor });
+        return;
+      }
+    }
     const g = gesture.current;
     if (!g) return;
     const dx = e.clientX - g.sx;
     const dy = e.clientY - g.sy;
     if (!g.moved && Math.hypot(dx, dy) < 4) return;
     g.moved = true;
+    suppressClick.current = true;
     if (g.kind === "pan") setVp((v) => ({ ...v, tx: g.ox + dx, ty: g.oy + dy }));
     else if (g.node) {
       g.node.x = g.ox + dx / vp.k;
@@ -260,11 +304,14 @@ export function XRayGraph({
       redraw((v) => v + 1);
     }
   };
-  const onUp = () => {
+  const onUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    if (pinch.current) { if (!pointers.current.size) pinch.current = null; gesture.current = null; return; }
     const g = gesture.current;
     gesture.current = null;
     if (!g || g.moved) return;
     setEdgeKey(null);
+    if (isAndroid && g.kind === "node" && g.node) { setEntityKey(g.node.key); return; }
     if (g.kind === "node" && g.node) setFocus((f) => (f === g.node!.key ? null : g.node!.key));
     else setFocus(null);
   };
@@ -329,21 +376,8 @@ export function XRayGraph({
   }, [focus, edgeKey]);
   const scopeHere = t.xrUpToHere.replace(" ({0}%)", "").replace(" ({0})", "");
 
-  return (
-    <div className="xrg" role="dialog" aria-label={t.xrGraph}>
-      <header className="xrg__head">
-        <div className="xrg__brand">
-          <span className="xrg__logo">
-            <Icon name="graph" size={18} />
-          </span>
-          <div>
-            <h2>{t.xrGraph}</h2>
-            <p>
-              <span className="xrg__book">{title}</span> · {t.xrgStats.replace("{0}", String(shown.length)).replace("{1}", String(edges.length))}
-            </p>
-          </div>
-        </div>
-        <div className="xrg__tools">
+  const controls = (
+    <div className="xrg__tools">
           <label className="xrg__count">
             <span>{t.xrPeople}</span>
             <input type="range" min={2} max={Math.max(2, Math.min(80, people.length))} value={count} onChange={(e) => setCount(Number(e.target.value))} />
@@ -358,11 +392,30 @@ export function XRayGraph({
             </button>
           </div>
           <AiButton lang={lang} x={x} view={view} title={title} provider={provider} people={shown} edges={edges} onSame={autoMerge} />
-          <button className="reader__tool" onClick={onClose} aria-label={t.xrClose} title={t.xrClose}>
-            <Icon name="close" size={20} />
-          </button>
+          {/* The Android sheet has its own close button in the header. */}
+          {!isAndroid && (
+            <button className="reader__tool" onClick={onClose} aria-label={t.xrClose} title={t.xrClose}>
+              <Icon name="close" size={20} />
+            </button>
+          )}
         </div>
+  );
+
+  return (
+    <div className="xrg" role="dialog" aria-label={t.xrGraph}>
+      <header className="xrg__head">
+        <div className="xrg__brand">
+          {isAndroid ? <button className="reader__tool" onClick={onClose} aria-label={t.xrBack}><Icon name="arrowL" size={22} /></button> : <span className="xrg__logo"><Icon name="graph" size={18} /></span>}
+          <div>
+            <h2>{t.xrGraph}</h2>
+            <p>
+              <span className="xrg__book">{title}</span> · {t.xrgStats.replace("{0}", String(shown.length)).replace("{1}", String(edges.length))}
+            </p>
+          </div>
+        </div>
+        {isAndroid ? <button className="reader__tool mx-settings" onClick={() => setSettings(true)} aria-label={t.mxSettings}><Icon name="more" size={22} /></button> : controls}
       </header>
+        {isAndroid && settings && <MobileReaderSheet title={t.mxSettings} closeLabel={t.xrClose} onClose={() => setSettings(false)}>{controls}</MobileReaderSheet>}
 
       {merged && (
         <div className="xrg__notice" role="status">
@@ -391,6 +444,7 @@ export function XRayGraph({
             onPointerDown={(e) => onDown(e)}
             onPointerMove={onMove}
             onPointerUp={onUp}
+            onPointerCancel={(e) => { pointers.current.delete(e.pointerId); pinch.current = null; gesture.current = null; }}
             onPointerLeave={() => setHover(null)}
           >
             <g className="xrg__edges">
@@ -409,8 +463,9 @@ export function XRayGraph({
                     className={`xrg__edge xrg__edge--${kind}${dim ? " is-dim" : ""}${on ? " is-on" : ""}`}
                     onPointerEnter={() => setHoverEdge(l.key)}
                     onPointerLeave={() => setHoverEdge(null)}
-                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => { if (isAndroid) onDown(e); else e.stopPropagation(); }}
                     onClick={() => {
+                      if (isAndroid && suppressClick.current) return;
                       setFocus(null);
                       setEdgeKey(l.key);
                     }}
@@ -431,8 +486,9 @@ export function XRayGraph({
                     transform={`translate(${p.x},${p.y})`}
                     onPointerEnter={() => setHoverEdge(p.key)}
                     onPointerLeave={() => setHoverEdge(null)}
-                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => { if (isAndroid) onDown(e); else e.stopPropagation(); }}
                     onClick={() => {
+                      if (isAndroid && suppressClick.current) return;
                       setFocus(null);
                       setEdgeKey(p.key);
                     }}
@@ -542,6 +598,7 @@ export function XRayGraph({
           onMerged={() => setEdgeKey(null)}
         />
       )}
+      {isAndroid && entityKey && x.byKey.get(entityKey) && <MobileReaderSheet title={x.byKey.get(entityKey)!.name} closeLabel={t.xrClose} onClose={() => setEntityKey(null)}><XRayDetail key={entityKey} lang={lang} x={x} view={view} e={x.byKey.get(entityKey)!} formatPos={formatPos} onBack={() => setEntityKey(null)} onSelect={setEntityKey} onGo={onGo} /></MobileReaderSheet>}
       {person && (
         <PersonPanel
           key={person.key}
@@ -998,7 +1055,7 @@ function AiButton({
                         setKey("");
                         prepare();
                       })
-                      .catch(() => setStage({ s: "error", msg: t.rsKeyBad }))
+                      .catch((e) => setStage({ s: "error", msg: String(e) === "bad key" ? t.rsKeyBad : t.rsKeySaveFailed.replace("{0}", String(e)) }))
                   }
                 >
                   {t.rsKeySave}

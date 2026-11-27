@@ -8,6 +8,7 @@
 .is-android .reader { padding-top: calc(var(--mobile-safe-top) + 28px); padding-bottom: calc(var(--mobile-safe-bottom) + 30px); }
 .is-android .reader__stage { position: static; }
 .is-android .reader__host { margin: 0; }
+.is-android .mr-tap-area { position: absolute; inset: var(--mobile-safe-top) 0 var(--mobile-safe-bottom); pointer-events: none; }
 .is-android .reader__nav, .is-android .reader__ribbon { display: none; }
 .is-android .reader button { font-family: inherit; touch-action: manipulation; }
 .is-android .mr-running-title { position: absolute; top: var(--mobile-safe-top); left: 24px; right: 24px; text-align: center; font-size: 10px; color: var(--r-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 28px; pointer-events: none; }
@@ -103,6 +104,13 @@
 .is-android .mc-yellow { width: 18px; height: 18px; background: #f6d84a; border-radius: 50%; }
 .is-android .mc-bar { position: fixed; width: min(358px, calc(100vw - 16px)); max-width: none; box-sizing: border-box; padding: 8px 8px 6px; display: flex; flex-direction: column; align-items: stretch; gap: 4px; border-radius: 16px; border: 1px solid #3a3e4a; background: #2a2d36; color: #e7e9ee; box-shadow: 0 14px 34px #0008; z-index: 55; color-scheme: dark; }
 .is-android .mc-bar::after, .is-android .mc-bar::before { display: none; }
+.is-android .mc-bar:has(.mc-bar__note) { max-height: calc(100dvh - 16px); overflow-y: auto; }
+.is-android .mc-bar:has(.mc-bar__note) > * { flex-shrink: 0; }
+.is-android .mc-bar__note { padding: 6px 10px 4px; border-bottom: 1px solid #3a3e4a; }
+.is-android .mc-bar__note-label { display: block; color: #9aa3b2; font-size: 12px; margin-bottom: 4px; }
+.is-android .mc-bar .mc-bar__note-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; width: 100%; padding: 0; text-align: left; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.is-android .mc-bar .mc-bar__note-text.is-expanded { display: block; -webkit-line-clamp: unset; max-height: min(35dvh, 240px); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.is-android .mc-bar .mc-bar__note-expand { min-height: 44px; padding: 0; color: #9aa3b2; font-size: 12px; }
 .is-android .mc-bar__colors { display: flex; align-items: center; justify-content: space-around; padding: 2px 0 6px; border-bottom: 1px solid #3a3e4a; }
 .is-android .mc-bar button { color: inherit; border: none; font: inherit; background: none; }
 .is-android .mc-bar .mc-dot { width: 44px; height: 44px; border-radius: 50%; border: 6px solid #2a2d36; box-shadow: none; display: grid; place-items: center; padding: 0; }
@@ -119,3 +127,53 @@
 @media (min-width: 900px) and (orientation: landscape) {
   .is-android .mc-dict, .is-android .hlnote { left: 50% !important; right: auto; width: 600px; max-width: calc(100% - 48px); transform: translateX(-50%); }
 }
+/* Android X-Ray: touch sized list, full-screen map and nested sheets. */
+.is-android .xr__types { display: flex; flex-wrap: nowrap; overflow-x: auto; padding: 4px; gap: 4px; border-radius: 12px; background: #1e222b; }
+.is-android .xr__types button { flex: 1; min-height: 36px; padding: 6px 10px; justify-content: center; white-space: nowrap; font-size: 13px; border: none; border-radius: 10px; }
+.is-android .xr__types button.is-on { background: #2f3440; color: #e7e9ee; }
+.is-android .xr__types button .icon, .is-android .xr__types button > span { display: none; }
+.is-android .mx-spoilers { margin: 0 0 12px; color: #9aa3b2; font-size: 13px; }
+.is-android .xr__list > li > button { min-height: 78px; padding: 12px 0; gap: 12px; display: grid; grid-template-columns: 42px minmax(0, 1fr); border-bottom: 1px solid #23272f; }
+.is-android .xr__list .xr__icon { width: 42px; height: 42px; border-radius: 50%; grid-row: span 2; }
+.is-android .xr__name { font-size: 16px; }
+.is-android .xr__main { min-width: 0; }
+.is-android .mx-description { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13.5px; line-height: 1.45; color: #c9ced8; }
+.is-android .xr__count { grid-column: 2; font-size: 12px; color: #9aa3b2; text-align: left; }
+.is-android .xr__main .xr-spread { height: 6px; margin-top: 6px; }
+.is-android .mx-jump { width: 100%; min-height: 44px; border: 1px solid #3a404d; border-radius: 12px; color: #ff8fb0; background: #1e222b; font: inherit; margin-top: 16px; }
+.is-android .xrg { padding-top: var(--mobile-safe-top); padding-bottom: var(--mobile-safe-bottom); box-sizing: border-box; }
+.is-android .xrg__head { padding: 8px 12px; flex-wrap: nowrap; gap: 4px; }
+.is-android .xrg__brand { gap: 4px; min-width: 0; }
+.is-android .xrg__brand > div { min-width: 0; }
+.is-android .xrg__brand h2 { font-size: 20px; }
+.is-android .xrg__brand p { font-size: 11px; display: block; overflow: hidden; text-overflow: ellipsis; }
+.is-android .xrg__book { max-width: none; }
+.is-android .xrg .reader__tool { min-width: 44px; min-height: 44px; flex: none; }
+.is-android .xrg__svg { touch-action: none; }
+.is-android .xrg__zoom { bottom: 130px; right: 12px; }
+.is-android .xrg__zoom button { width: 44px; height: 44px; }
+.is-android .xrg__legend { left: 12px; right: 12px; bottom: 12px; }
+.is-android .xrg__chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+.is-android .xrg__chip, .is-android .xrg__switch { min-height: 44px; flex: none; font-size: 13px; }
+.is-android .xrg__hint { display: none; }
+.is-android .xrg > .mr-sheet-layer { z-index: 5; }
+.is-android .xrg .mr-sheet { max-height: calc(100% - var(--mobile-safe-top) - 16px); }
+.is-android .xrg .mr-sheet:has(.xr--detail) { height: 70%; }
+.is-android .xrg .mr-sheet:has(.xr--detail) .mr-sheet__content { display: flex; flex: 1; overflow: hidden; }
+.is-android .xrg .xr--detail { width: 100%; min-height: 0; }
+.is-android .xrg .xrg__tools { flex-direction: column; align-items: stretch; padding-bottom: 16px; gap: 16px; }
+.is-android .xrg .xrg__count { width: 100%; }
+.is-android .xrg .xrg__count input { flex: 1; width: auto; min-height: 44px; }
+.is-android .xrg .xrg__count { gap: 12px; font-size: 15px; }
+.is-android .xrg .xrg__count b { min-width: 36px; padding: 4px 8px; font-size: 14px; }
+/* Same chosen-option look as the AI provider switch: accent fill, not a faint tile. */
+.is-android .xrg .xrg__scope { display: flex; padding: 4px; gap: 4px; border-radius: 12px; background: #1e222b; }
+.is-android .xrg .xrg__scope button { flex: 1; min-height: 44px; font-size: 15px; border-radius: 9px; }
+.is-android .xrg .xrg__scope button.is-on { background: var(--accent); color: var(--accent-ink, #fff); font-weight: 600; box-shadow: none; }
+.is-android .xrg .xrg__tools .xrg__ai, .is-android .xrg .xrg__tools .xrg__aibtn { width: 100%; }
+.is-android .xrg .xrg__tools .xrg__aibtn { justify-content: center; min-height: 48px; font-size: 15px; }
+.is-android .xrg__panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 65%; border-radius: 22px 22px 0 0; padding-bottom: calc(16px + var(--mobile-safe-bottom)); z-index: 4; }
+.is-android .ms-totals { color: var(--muted); font-size: 12px; margin: 0; }
+.is-android .xr__row .xr__graphbtn { display: none; }
+/* In the settings sheet the AI step box flows below the button instead of floating off the sheet. */
+.is-android .xrg .xrg__tools .xrg__aipop { position: static; width: auto; margin-top: 12px; }

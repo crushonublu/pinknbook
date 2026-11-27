@@ -1,3 +1,5 @@
+import { MobileReaderSheet } from "./mobile/MobileReaderSheet";
+import { useMobileDismiss } from "./mobile/back";
 import { MobilePicker } from "./mobile/MobilePicker";
 import { isAndroid } from "./platform";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -134,6 +136,8 @@ export function StatsPage({
 }) {
   const t = STR[lang];
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [badgesOpen, setBadgesOpen] = useState(false);
+  useMobileDismiss(isAndroid && badgesOpen, () => setBadgesOpen(false), true);
   const pageRef = useRef<HTMLDivElement>(null);
 
   const byDay = useMemo(() => new Map((s?.days ?? []).map((d) => [d.day, d])), [s]);
@@ -212,8 +216,78 @@ export function StatsPage({
   const bw = W / 30;
   const y = (m: number) => H - (m / yMax) * H;
 
+  const badgeGrid = (
+    <section className="stats__panel">
+        <div className="stats__panelhead">
+          <h2>{t.badges}</h2>
+          <span className="muted small">
+            {t.badgesEarned.replace("{0}", String(s.badges.filter((b) => b.tier > 0).length)).replace("{1}", String(s.badges.length))}
+          </span>
+        </div>
+        {/* One block of equal tiles in group order (the group is in the
+            tooltip), centred so a short last row stays balanced. */}
+        <div className="bgrid">
+        {GROUPS.flatMap((g) =>
+              g.ids.map((id) => {
+                const b = s.badges.find((x) => x.id === id);
+                if (!b) return null;
+                const next = b.thresholds[b.tier] ?? null;
+                const prev = b.tier ? b.thresholds[b.tier - 1] : 0;
+                const p = next == null ? 1 : Math.min(1, (b.value - prev) / Math.max(1, next - prev));
+                return (
+                  <div
+                    key={id}
+                    className={`bcard bcard--t${b.tier}`}
+                    title={`${t[`bd_${id}` as const]} · ${t[TIER_KEYS[b.tier]]} (${t[g.key]})\n${t[`bdd_${id}` as const].replace("{0}", String(next ?? b.thresholds[3]))}`}
+                  >
+                    <div className="bcard__img">
+                      <img src={badgeImg(id)} alt="" draggable={false} />
+                      {b.tier === 0 && <span className="bcard__lock"><Icon name="lock" size={12} /></span>}
+                    </div>
+                    <div className="bcard__name">{t[`bd_${id}` as const]}</div>
+                    {next == null ? (
+                      <div className="bcard__val bcard__val--max">{t[TIER_KEYS[b.tier]]}</div>
+                    ) : (
+                      <>
+                        <div className="bcard__prog" aria-label={`${b.value}/${next}`}>
+                          <i style={{ width: `${p * 100}%` }} />
+                        </div>
+                        <div className="bcard__val">
+                          {b.value}/{next}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              }),
+        )}
+        </div>
+      </section>
+  );
+
   return (
     <div className="stats" ref={pageRef}>
+      {isAndroid && <>
+        <section className="ms-hero stats__panel">
+          <div className="ms-ring"><TodayRing value={todayMin} goal={goal} /><div><b>{todayMin}′</b><small>/ {t.minutesN.replace("{0}", String(goal))}</small></div></div>
+          <div><h2>{todayMin >= goal ? t.msGoalDone : t.msRemaining.replace("{0}", String(goal - todayMin))}</h2>
+            <p>{(todayMin >= goal ? t.msStreakKept : t.msKeepStreak).replace("{0}", String(s.streak.current))}</p>
+            <div className="ms-goal"><MobilePicker label={t.msChangeGoal} triggerLabel={t.msChangeGoal} value={goal} options={[5, 10, 15, 20, 30, 45, 60, 90, 120].map((g) => ({ value: g, label: t.minutesN.replace("{0}", String(g)) }))} onChange={(g) => setSettings({ goalMinutes: g })} /></div>
+          </div>
+        </section>
+        <section className="stats__panel ms-week">
+          <div className="stats__panelhead"><h2>{t.msLast7}</h2><span>{t.msTotal.replace("{0}", fmtDuration(lang, last30.slice(-7).reduce((n, d) => n + (d.app + d.kin) * 60, 0)))}</span></div>
+          <div className="ms-bars" role="img" aria-label={t.msLast7}>
+            <i className="ms-goalline" style={{ bottom: `${24 + 96 * goal / Math.max(goal, ...last30.slice(-7).map((d) => d.app + d.kin))}px` }} />
+            {last30.slice(-7).map((d) => <div key={d.key} className={d.key === s.today ? "is-today" : ""} title={dayText(d.key)}><i style={{ height: `${Math.max(2, 96 * (d.app + d.kin) / Math.max(goal, ...last30.slice(-7).map((v) => v.app + v.kin)))}px` }} /><span>{d.key === s.today ? t.msToday : t.msWeekdays.split(",")[d.date.getDay()]}</span></div>)}
+          </div>
+        </section>
+        <div className="ms-tiles"><section className="stats__panel"><b>{s.streak.current}</b><span>{t.msConsecutive}</span></section><section className="stats__panel"><b>{s.books_finished}</b><span>{t.booksDone}</span></section></div>
+        <section className="stats__panel ms-badges"><div className="stats__panelhead"><h2>{t.badges}</h2><button onClick={() => setBadgesOpen(true)}>{t.msSeeAll}</button></div><div className="ms-chips">{s.badges.map((b) => <button key={b.id} className={b.tier === 0 ? "is-locked" : undefined} onClick={() => setBadgesOpen(true)}><span className="ms-chip__img"><img src={badgeImg(b.id)} alt="" />{b.tier === 0 && <Icon name="lock" size={11} />}</span><span>{t[`bd_${b.id}`]}</span><small>{b.tier ? `${b.value} / ${b.thresholds[b.tier] ?? b.value}` : t.tierLocked}</small></button>)}</div></section>
+        <label className="stats__toggle ms-kindle"><span>{t.kindleEst}</span><input type="checkbox" checked={s.kindle_estimates} onChange={(e) => setSettings({ kindleEstimates: e.target.checked })} /></label>
+        <h2 className="ms-details">{t.msDetails}</h2>
+        <p className="ms-totals">{t.totalTime}: {fmtDuration(lang, s.total_seconds)} · {t.longest.replace("{0}", String(s.streak.longest))} · {s.streak.freeze_left ? t.freezeLeft : t.freezeUsed}</p>
+      </>}
       <header className="stats__head">
         <button className="reader__back stats__back" onClick={onBack}>
           <Icon name="arrowL" size={17} />
@@ -375,52 +449,7 @@ export function StatsPage({
         </section>
       </div>
 
-      <section className="stats__panel">
-        <div className="stats__panelhead">
-          <h2>{t.badges}</h2>
-          <span className="muted small">
-            {t.badgesEarned.replace("{0}", String(s.badges.filter((b) => b.tier > 0).length)).replace("{1}", String(s.badges.length))}
-          </span>
-        </div>
-        {/* One block of equal tiles in group order (the group is in the
-            tooltip), centred so a short last row stays balanced. */}
-        <div className="bgrid">
-        {GROUPS.flatMap((g) =>
-              g.ids.map((id) => {
-                const b = s.badges.find((x) => x.id === id);
-                if (!b) return null;
-                const next = b.thresholds[b.tier] ?? null;
-                const prev = b.tier ? b.thresholds[b.tier - 1] : 0;
-                const p = next == null ? 1 : Math.min(1, (b.value - prev) / Math.max(1, next - prev));
-                return (
-                  <div
-                    key={id}
-                    className={`bcard bcard--t${b.tier}`}
-                    title={`${t[`bd_${id}` as const]} · ${t[TIER_KEYS[b.tier]]} (${t[g.key]})\n${t[`bdd_${id}` as const].replace("{0}", String(next ?? b.thresholds[3]))}`}
-                  >
-                    <div className="bcard__img">
-                      <img src={badgeImg(id)} alt="" draggable={false} />
-                      {b.tier === 0 && <span className="bcard__lock"><Icon name="lock" size={12} /></span>}
-                    </div>
-                    <div className="bcard__name">{t[`bd_${id}` as const]}</div>
-                    {next == null ? (
-                      <div className="bcard__val bcard__val--max">{t[TIER_KEYS[b.tier]]}</div>
-                    ) : (
-                      <>
-                        <div className="bcard__prog" aria-label={`${b.value}/${next}`}>
-                          <i style={{ width: `${p * 100}%` }} />
-                        </div>
-                        <div className="bcard__val">
-                          {b.value}/{next}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              }),
-        )}
-        </div>
-      </section>
+      {isAndroid ? badgesOpen && <MobileReaderSheet title={t.badges} closeLabel={t.xrClose} onClose={() => setBadgesOpen(false)}><div className="ms-badgesheet">{badgeGrid}</div></MobileReaderSheet> : badgeGrid}
 
       {tip && (
         <div className="stats__tip" style={{ left: tip.x, top: tip.y }}>

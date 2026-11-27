@@ -372,7 +372,7 @@ export function XRayPanel({
   onGo: (m: Mention) => void;
 }) {
   const t = STR[lang];
-  const [type, setType] = useState<XrType | "all">("all");
+  const [type, setType] = useState<XrType | "all">(isAndroid ? "person" : "all");
   const [filter, setFilter] = useState("");
   const [term, setTerm] = useState("");
   const entity = selected ? x.byKey.get(selected) ?? null : null;
@@ -382,21 +382,24 @@ export function XRayPanel({
   }
 
   const q = filter.trim().toLowerCase();
-  const shown = x.ents.filter((e) => (type === "all" || e.type === type) && (!q || e.forms.some((f) => f.toLowerCase().includes(q))));
+  const shown = x.ents.filter((e) => (type === "all" || e.type === type || (isAndroid && type === "term" && e.type === "org")) && (!q || e.forms.some((f) => f.toLowerCase().includes(q))));
   const counts: Record<string, number> = { all: x.ents.length };
   for (const e of x.ents) counts[e.type] = (counts[e.type] ?? 0) + 1;
+  if (isAndroid) counts.term = (counts.term ?? 0) + (counts.org ?? 0);
 
   return (
     <div className="xr">
       <div className="xr__bar">
+        {isAndroid && !x.wholeBook && <p className="mx-spoilers">{t.mxSpoilers}</p>}
         <div className="xr__types" role="radiogroup">
-          {(["all", "person", "place", "org", "term"] as const).map((k) => (
+          {(isAndroid ? ["person", "place", "term"] as const : ["all", "person", "place", "org", "term"] as const).map((k) => (
             <button key={k} role="radio" aria-checked={type === k} className={type === k ? "is-on" : ""} onClick={() => setType(k)}>
               {k !== "all" && <Icon name={TYPE_ICON[k]} size={13} />}
               {k === "all" ? t.xrAll : t[`xr_${k}` as const]}
               <span>{counts[k] ?? 0}</span>
             </button>
           ))}
+          {isAndroid && <button role="radio" aria-checked={false} onClick={onOpenGraph}>{t.xrRelations}</button>}
         </div>
         <div className="xr__row">
           <label className="xr__whole" title={t.xrWholeBookHint}>
@@ -439,9 +442,10 @@ export function XRayPanel({
                 </span>
                 <span className="xr__main">
                   <span className="xr__name">{e.name}</span>
+                  {isAndroid && x.descriptionOf(e.key) && <span className="mx-description">{x.descriptionOf(e.key)}</span>}
                   <Spread mentions={ms} span={x.limit} />
                 </span>
-                <span className="xr__count">{ms.length}</span>
+                <span className="xr__count">{isAndroid ? t.xrTimes.replace("{0}", String(ms.length)) : ms.length}</span>
               </button>
             </li>
           );
@@ -472,7 +476,7 @@ export function XRayPanel({
   );
 }
 
-function XRayDetail({
+export function XRayDetail({
   lang,
   x,
   view,
@@ -676,6 +680,7 @@ function XRayDetail({
           </>
         )}
 
+        {isAndroid && ms[0] && <button className="mx-jump" onClick={() => onGo(ms[0])}>{t.mxJump}</button>}
         <h4>{t.xrMentions}</h4>
         <ul className="xr__mentions">
           {ms.slice(0, shown).map((m, i) => (

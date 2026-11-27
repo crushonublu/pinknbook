@@ -38,6 +38,7 @@ export function HighlightBar({
   anchor,
   current,
   hasNote,
+  note,
   onColor,
   onNote,
   onCopy,
@@ -53,6 +54,7 @@ export function HighlightBar({
   mobileCurrent?: MobileHighlightStyle;
   onMobileColor?: (style: MobileHighlightStyle) => void;
   hasNote?: boolean;
+  note?: string;
   onColor: (c: HighlightColor) => void;
   onNote: () => void;
   onCopy: () => void;
@@ -61,7 +63,10 @@ export function HighlightBar({
 }) {
   const t = STR[lang];
   const [more, setMore] = useState(false);
-  const { ref, pos } = usePlace(anchor, isAndroid ? 12 : 10, more, isAndroid ? 32 : 10, isAndroid);
+  const [noteExpanded, setNoteExpanded] = useState(false);
+  const notePreview = note?.trim();
+  const { ref, pos } = usePlace(anchor, isAndroid ? 12 : 10,
+    isAndroid ? JSON.stringify([more, notePreview, noteExpanded]) : more, isAndroid ? 32 : 10, isAndroid);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -77,6 +82,15 @@ export function HighlightBar({
   if (isAndroid) return <div ref={ref} className={`hlbar mc-bar${pos?.below ? " is-below" : ""}`}
     style={pos ? { left: pos.left, top: pos.top } : { visibility: "hidden" }} role="toolbar" aria-label={t.hlToolbar}
     onPointerDown={(e) => e.preventDefault()}>
+    {notePreview && <div className="mc-bar__note">
+      <span className="mc-bar__note-label">{t.hlNoteTitle}</span>
+      <button className={`mc-bar__note-text${noteExpanded ? " is-expanded" : ""}`} onClick={onNote} aria-label={t.hlEditNote}>
+        {notePreview}
+      </button>
+      <button className="mc-bar__note-expand" onClick={() => setNoteExpanded((v) => !v)} aria-expanded={noteExpanded}>
+        {noteExpanded ? t.mcCollapseNote : t.mcExpandNote}
+      </button>
+    </div>}
     <div className="mc-bar__colors" role="group" aria-label={t.hlColor}>
       {(["yellow", "green", "blue", "pink", "underline"] as const).map((c) => <button key={c}
         className={`mc-dot${(mobileCurrent ?? current) === c ? " is-on" : ""}${c === "underline" ? " mc-dot--underline" : ""}`}

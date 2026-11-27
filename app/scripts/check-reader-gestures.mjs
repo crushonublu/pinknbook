@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 const source=fs.readFileSync('src/mobile/readerGestures.ts','utf8');
 const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
-const {watchReaderGestures}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const {watchReaderGestures,acceptReaderSurfaceEvent}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 let clock=1000;Object.defineProperty(globalThis,'performance',{value:{now:()=>clock},configurable:true});
 class Doc extends EventTarget {
  selection={isCollapsed:true}; link=false; frameLeft=0; frameTop=0;
@@ -68,6 +68,49 @@ check(()=>{hostCalls.length=0;hostBusy=true;hostSwipe(415,155);assert.equal(host
 check(()=>{const before=hostTurns.length;for(const type of ['touchstart','touchmove','touchend','click']){const e=hostEvent(type,{composedPath:()=>[{localName:'iframe'},host],touches:[{clientX:415,clientY:150}],changedTouches:[{clientX:155,clientY:150}],clientX:415,clientY:150});assert.equal(e.defaultPrevented,false);}assert.equal(hostTurns.length,before);assert.equal(hostCalls.length,0);},'host ignores iframe-element paths, including shadow-retargeted events');
 check(()=>{hostCurl=null;const before=hostTurns.length;click(370);assert.equal(hostTurns.length,before);assert.equal(turns.length,7);},'section document dispatch only reaches its own recognizer');
 check(()=>{hostCurl=hostDrag;hostTouch('touchstart',415);hostTouch('touchmove',350);stopHost();assert.deepEqual(hostCalls.at(-1),['end',true]);const count=hostCalls.length;hostTouch('touchend',155);hostClick(415);assert.equal(hostCalls.length,count);assert.equal(hostTurns.length,9);stopHost=watchReaderGestures(host,hostOptions);hostCurl=null;hostClick(415);assert.equal(hostTurns.length,10);stopHost();},'host cleanup cancels active drag, removes listeners and allows one clean reattachment');
+// The outer reader owns title/footer/empty margins; the host still owns its
+// existing gestures when controls are open. Safe-area insets are excluded.
+{
+ const reader=new EventTarget(),pageHost=new EventTarget();
+ const bounds={left:5,right:416,top:30,bottom:790,width:411,height:760};
+ let immersive=true,selected=false,toggled=0;const navigated=[];
+ const stop=watchReaderGestures(reader,{bounds:()=>bounds,point:(x,y)=>({x,y}),selected:()=>selected,
+  accept:e=>acceptReaderSurfaceEvent(e,pageHost,immersive,bounds),
+  turn:d=>navigated.push(d),toggle:()=>toggled++});
+ const send=(type,x,y,path=[reader])=>{
+  const e=new Event(type,{cancelable:true});Object.assign(e,{clientX:x,clientY:y,composedPath:()=>path,
+   touches:type==='touchend'?[]:[{clientX:x,clientY:y}],changedTouches:[{clientX:x,clientY:y}]});reader.dispatchEvent(e);return e;
+ };
+ check(()=>{
+  for(const y of [30,44,58,750,776,790]){
+   send('touchstart',210,y);send('touchend',210,y);send('click',210,y);
+   send('click',6,y);send('click',415,y);
+  }
+  assert.equal(toggled,6);assert.deepEqual(navigated,Array.from({length:6},()=>[-1,1]).flat());
+ },'reader title, footer and empty margins share the centre and 28% edge tap zones exactly once');
+ check(()=>{
+  for(const y of [0,29,791,820])send('click',210,y);
+  for(const x of [4,417])send('click',x,44);
+  assert.equal(toggled,6);
+ },'reader margins exclude all safe-area insets and points outside reader bounds');
+ check(()=>{
+  immersive=false;for(const y of [44,776]){
+   for(const x of [6,210,415])send('click',x,y);
+   const e=send('touchstart',210,y);assert.equal(e.defaultPrevented,false);
+  }
+  assert.equal(toggled,6);assert.equal(navigated.length,12);
+  send('click',210,400,[pageHost,reader]);assert.equal(toggled,7);
+  immersive=true;
+ },'shown controls and sheets retain margin buttons/slider while host behaviour remains available');
+ check(()=>{
+  const iframe={localName:'iframe'};
+  for(const type of ['touchstart','touchmove','touchend','click'])send(type,210,400,[iframe,pageHost,reader]);
+  assert.equal(toggled,7);assert.equal(navigated.length,12);
+  selected=true;send('click',210,44);send('click',415,776);selected=false;
+  assert.equal(toggled,7);assert.equal(navigated.length,12);
+ },'outer reader ignores iframe paths and preserves selection without duplicate navigation');
+ stop();
+}
 console.log(checks+' gesture checks passed');
 
 // Real curl lifecycle with DOM/bitmap adapters; rasterisation needs a WebView.
@@ -184,3 +227,51 @@ for (const android of [false, true]) {
 console.log('PASS Android selection cannot navigate or autoscroll; desktop pointer/keyboard selection retained');
 
 await curlCheck(async()=>{const c=makeCurl();await warm(c);c.effect.beginDrag(1,370,500,clock-40);c.effect.moveDrag(330,500);await flush();c.effect.endDrag(false);await flush();assert.deepEqual(c.nav,[1]);c.effect.destroy();},'first recognised move uses original touch time for a one-move flick');
+
+
+// The allocation-free Android solver must reproduce the unchanged desktop
+// solver, including corner clamps, landing radii and diagonal drags.
+const geometryJs=ts.transpileModule(fs.readFileSync('src/curl/geometry.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
+const geometry=await import('data:text/javascript;base64,'+Buffer.from(geometryJs).toString('base64'));
+const output={G:{x:0,y:0},F:{x:0,y:0},u:{x:0,y:0},a:0,R:0};
+const storedF=output.F,storedU=output.u;
+const near=(a,b)=>assert(Math.abs(a-b)<1e-7, String(a)+' != '+String(b));
+let geometryChecks=0;
+for(const [W,H] of [[390,700],[600,420]]) for(const gy of [.02,.5,.98]) for(const gx of [.6,.97,1]) {
+ const G={x:W*gx,y:H*gy};
+ for(let i=0;i<=80;i++) {
+  const F={x:W*(1.5-3*i/80),y:G.y+H*.6*Math.sin(i*.31)};
+  const old=geometry.solveCurl(G,F,W,H),c=geometry.solveCurlInto(G,F,W,H,output);
+  assert.equal(c,output);assert.equal(c.F,storedF);assert.equal(c.u,storedU);
+  for(const key of ['a','R'])near(c[key],old[key]);
+  for(const key of ['F','u']){near(c[key].x,old[key].x);near(c[key].y,old[key].y);}
+  // XBPageCurl vertex projection: signed distance d wraps, then mirrors.
+  const d=c.a,r=Math.max(c.R,.0001),angle=Math.min(d/r,Math.PI);
+  const projected=d<=0?0:d>=Math.PI*r?c.a+d-Math.PI*r:c.a-r*Math.sin(angle);
+  assert(Math.hypot(G.x+c.u.x*projected-c.F.x,G.y+c.u.y*projected-c.F.y)<.001);
+  geometryChecks++;
+ }
+ // Both exact end states, also exercised in reverse order by previous-page turns.
+ for(const F of [G,{x:-G.x,y:G.y},G]) {
+  const c=geometry.solveCurlInto(G,F,W,H,output);
+  assert(Number.isFinite(c.a)&&Number.isFinite(c.R));near(c.F.x,F.x);near(c.F.y,F.y);
+ }
+}
+console.log('PASS '+geometryChecks+' GPU/desktop solver and cylinder grab-position comparisons');
+
+// Coordinate conversion may measure iframe layout. It runs only at start,
+// including when the same document's iframe offset changes mid-drag.
+{
+ const target=new EventTarget(),moves=[]; let reads=0;
+ const stop=watchReaderGestures(target,{point:(x,y)=>{reads++;return {x:x-390,y:y+40};},
+  bounds:()=>({left:0,width:390}),selected:()=>false,turn:()=>{},toggle:()=>{},
+  drag:()=>({beginDrag:()=>true,moveDrag:(x,y)=>moves.push([x,y]),endDrag:()=>{}})});
+ const send=(type,x)=>{const e=new Event(type,{cancelable:true});Object.assign(e,{touches:type==='touchend'?[]:[{clientX:x,clientY:150}],changedTouches:[{clientX:x,clientY:150}]});target.dispatchEvent(e);};
+ send('touchstart',720);send('touchmove',690);send('touchmove',660);send('touchend',660);
+ assert.equal(reads,1);assert.deepEqual(moves,[[300,190],[270,190]]);stop();
+ console.log('PASS Android coordinate mapping never measures layout during drag');
+}
+await curlCheck(async()=>{
+ const c=makeCurl({zones:false,readyOnly:true,renderer:'webgl'});
+ await warm(c);c.effect.turn(1);await flush();assert.deepEqual(c.nav,[1]);c.effect.destroy();
+},'unavailable WebGL retains Canvas 2D navigation');

@@ -1246,13 +1246,49 @@ class KF8 {
 
         const { skel, frags } = this.#sections[index]
         const frag = frags.find(frag => frag.index === fid)
+        if (!frag || off < 0 || off >= frag.length) return { index }
         const offset = skel.offset + skel.length + frag.offset
         const fragRaw = await this.loadRaw(offset, offset + frag.length)
         const str = this.mobi.decode(fragRaw.slice(off))
         const selector = getFragmentSelector(str)
-        this.#setFragmentSelector(fid, off, selector)
-        const anchor = doc => doc.querySelector(selector)
-        return { index, anchor }
+        if (selector) {
+            this.#setFragmentSelector(fid, off, selector)
+            return { index, anchor: doc => doc.querySelector(selector) }
+        }
+        // Some Amazon conversions have no fragment identifier. Insert a temporary
+        // anchor at the target byte in this fragment, assemble the same section,
+        // then map the enclosing element's child path into the original document.
+        const token = 'data-pntome-note-position'
+        // loadText's insertion offsets are byte offsets; reproduce its byte assembly,
+        // retaining the target's assembled byte position as subsequent fragments move it.
+        let bytes = await this.loadRaw(skel.offset, skel.offset + skel.length)
+        let targetOffset = null
+        for (const part of frags) {
+            const ins = part.insertOffset - skel.offset
+            const begin = skel.offset + skel.length + part.offset
+            const data = await this.loadRaw(begin, begin + part.length)
+            if (targetOffset != null && ins <= targetOffset) targetOffset += data.length
+            bytes = concatTypedArray3(bytes.slice(0, ins), data, bytes.slice(ins))
+            if (part.index === fid) targetOffset = ins + off
+        }
+        if (targetOffset == null) return { index }
+        let assembled = this.mobi.decode(bytes)
+        let at = this.mobi.decode(bytes.slice(0, targetOffset)).length
+        if (assembled.lastIndexOf('<', at) > assembled.lastIndexOf('>', at)) at = assembled.indexOf('>', at) + 1
+        assembled = assembled.slice(0, at) + `<span ${token}="1"></span>` + assembled.slice(at)
+        const marked = this.parser.parseFromString(assembled, this.#type)
+        const marker = marked.querySelector(`[${token}]`)
+        const parent = marker?.parentElement
+        marker?.remove()
+        const path = []
+        for (let el = parent; el?.parentElement; el = el.parentElement)
+            path.unshift(Array.from(el.parentElement.children).indexOf(el))
+        return { index, anchor: doc => {
+            if (!parent) return null
+            let el = doc.documentElement
+            for (const i of path) el = el?.children[i]
+            return el
+        } }
     }
     splitTOCHref(href) {
         const pos = parsePosURI(href)

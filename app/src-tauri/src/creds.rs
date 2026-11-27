@@ -113,16 +113,36 @@ pub fn clear() -> Result<(), String> {
     }
 }
 
+/// One small secret in a single entry (e.g. an AI API key).
+pub fn secret_get(name: &str) -> Result<Option<String>, String> {
+    match entry(name)?.get_password() {
+        Ok(v) => Ok(Some(v)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+pub fn secret_put(name: &str, value: &str) -> Result<(), String> {
+    entry(name)?.set_password(value).map_err(|e| e.to_string())
+}
+
+pub fn secret_remove(name: &str) -> Result<(), String> {
+    match entry(name)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 }
 #[cfg(not(target_os = "android"))]
-pub use desktop::{save, load, clear};
+pub use desktop::{save, load, clear, secret_get, secret_put, secret_remove};
 
 #[cfg(target_os = "android")]
 mod android {
     use crate::adp::register::Credentials;
     use jni::{objects::{JClass, JObject, JString, JValue}, JavaVM};
 
-    fn store(method: &str, value: Option<&str>) -> Result<Option<String>, String> {
+    fn store(method: &str, key: &str, value: Option<&str>) -> Result<Option<String>, String> {
         let result = (|| -> jni::errors::Result<Option<String>> {
             let ctx = ndk_context::android_context();
             // The context is owned by Android and remains valid for the app lifetime.
@@ -134,7 +154,7 @@ mod android {
                 let name = env.new_string("com.pinknbook.app.SecureStore")?;
                 let class = env.call_method(loader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", &[JValue::Object(&name)])?.l()?;
                 let class = JClass::from(class);
-                let name = env.new_string("amazon-credentials")?;
+                let name = env.new_string(key)?;
                 let mut args = vec![JValue::Object(&context), JValue::Object(&name)];
                 let data;
                 let signature = if let Some(value) = value {
@@ -161,13 +181,17 @@ mod android {
     }
     pub fn save(creds: &Credentials) -> Result<(), String> {
         let json = serde_json::to_string(creds).map_err(|_| "Could not encode credentials")?;
-        store("put", Some(&json)).map(|_| ())
+        secret_put("amazon-credentials", &json)
     }
     pub fn load() -> Result<Option<Credentials>, String> {
-        store("get", None)?.map(|json| serde_json::from_str(&json)
+        secret_get("amazon-credentials")?.map(|json| serde_json::from_str(&json)
             .map_err(|_| "Could not decode stored credentials".to_string())).transpose()
     }
-    pub fn clear() -> Result<(), String> { store("remove", None).map(|_| ()) }
+    pub fn clear() -> Result<(), String> { secret_remove("amazon-credentials") }
+
+    pub fn secret_get(name: &str) -> Result<Option<String>, String> { store("get", name, None) }
+    pub fn secret_put(name: &str, value: &str) -> Result<(), String> { store("put", name, Some(value)).map(|_| ()) }
+    pub fn secret_remove(name: &str) -> Result<(), String> { store("remove", name, None).map(|_| ()) }
 }
 #[cfg(target_os = "android")]
-pub use android::{save, load, clear};
+pub use android::{save, load, clear, secret_get, secret_put, secret_remove};

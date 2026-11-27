@@ -1,3 +1,4 @@
+import { findAdjacentNote, findNoteByMarker } from "./footnoteFallback";
 import { isAndroid } from "./platform";
 import { STR, type Lang } from "./i18n";
 import { MobileReaderSheet } from "./mobile/MobileReaderSheet";
@@ -25,7 +26,7 @@ export function noteContent(text: string): DocumentFragment {
 }
 
 const NOTEREF = /(^|\s)(noteref|footnote|endnote|rearnote|biblioref)(\s|$)/i;
-const SHORT_MARK = /^[[(]?\s*([0-9]{1,4}|[*†‡§¶]{1,3}|[ivxlc]{1,5}|[a-z])\s*[\])]?\.?$/i;
+const SHORT_MARK = /^[[(]?\s*([0-9]{1,4}[*†‡]?|[*†‡§¶]{1,3}|[ivxlc]{1,5}|[a-z])\s*[\])]?\.?$/i;
 
 /**
  * Whether a link looks like a footnote reference: marked as one, set in
@@ -120,13 +121,33 @@ export async function loadFootnote(view: any, index: number, a: Element): Promis
   if (!book || !raw) return null;
   const href = book.sections?.[index]?.resolveHref?.(raw) ?? raw;
   if (book.isExternal?.(href)) return null;
-  const resolved = await book.resolveHref?.(href);
-  if (!resolved || resolved.index == null || typeof resolved.anchor !== "function") return null;
-  const doc = (await book.sections[resolved.index]?.createDocument?.()) as Document | undefined;
-  if (!doc) return null;
-  const target = resolved.anchor(doc) as Element | null;
-  if (!target || target === doc.body) return null;
-  const note = noteElement(target);
+  // Kindle conversions can leave placeholders or positions without an anchor.
+  // A failed resolver must not prevent the marker search.
+  let resolved;
+  try { resolved = await book.resolveHref?.(href); } catch { /* malformed conversion */ }
+  let note: Element | null = null;
+  let noteIndex = resolved?.index ?? index;
+  if (resolved?.index >= 0 && typeof resolved.anchor === "function") {
+    try {
+      const doc = await book.sections[resolved.index]?.createDocument?.();
+      const target = doc && resolved.anchor(doc);
+      if (target?.nodeType === 1 && target !== doc.body) note = noteElement(target);
+    } catch { /* fall through to marker search */ }
+  }
+  if (note && (!(note.textContent ?? "").trim() || (note.textContent ?? "").length > 4000)) note = null;
+  if (!note && isNoteRef(a)) {
+    const adjacent = findAdjacentNote(a);
+    if (adjacent) note = noteElement(adjacent);
+  }
+  if (!note && isNoteRef(a)) {
+    for (let i = index; i < (book.sections?.length ?? 0); i++) {
+      let doc: Document | undefined;
+      try { doc = i === index ? a.ownerDocument : await book.sections[i]?.createDocument?.(); } catch { continue; }
+      if (!doc) continue;
+      const target = findNoteByMarker(doc, a, i === index);
+      if (target) { note = noteElement(target); noteIndex = i; break; }
+    }
+  }
   if (!note) return null;
   const frag = document.createDocumentFragment();
   copySafe(note, frag);
@@ -135,7 +156,7 @@ export async function loadFootnote(view: any, index: number, a: Element): Promis
   if (SHORT_MARK.test((note.textContent ?? "").trim())) {
     let more = blocksAfter(note);
     if (!more.length) {
-      const next = (await book.sections[resolved.index + 1]?.createDocument?.()) as Document | undefined;
+      const next = (await book.sections[noteIndex + 1]?.createDocument?.()) as Document | undefined;
       const first = next?.body?.firstElementChild;
       const lead = first ? firstWithText(first)?.closest(BLOCKS) : null;
       // Carry on only into running text, not a heading or a contents page.

@@ -6,8 +6,8 @@ import { useMobileDismiss } from "./back";
 export type MobilePickerOption<V extends string | number> = { value: V; label: string };
 
 /** Android value trigger and modal option sheet, also usable inside another sheet. */
-export function MobilePicker<V extends string | number>({ label, value, options, onChange }: {
-  label: string; value: V; options: readonly MobilePickerOption<V>[]; onChange: (value: V) => void;
+export function MobilePicker<V extends string | number>({ label, value, options, onChange, triggerLabel }: {
+  triggerLabel?: string; label: string; value: V; options: readonly MobilePickerOption<V>[]; onChange: (value: V) => void;
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -34,7 +34,7 @@ export function MobilePicker<V extends string | number>({ label, value, options,
 
   return <>
     <button type="button" ref={trigger} className="mobile-picker__trigger" aria-label={`${label}: ${options.find((o) => o.value === value)?.label ?? ""}`} aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(true)}>
-      <span>{options.find((o) => o.value === value)?.label}</span><Icon name="chevronDown" size={18} />
+      <span>{triggerLabel ?? options.find((o) => o.value === value)?.label}</span><Icon name="chevronDown" size={18} />
     </button>
     {open && createPortal(<div data-mobile-picker className="mobile-picker__backdrop" onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
       <section className="mobile-picker__sheet" role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} onKeyDown={(e) => {

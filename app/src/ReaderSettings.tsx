@@ -248,7 +248,7 @@ export function AiSettings({
   const t = STR[lang];
   const [status, setStatus] = useState<{ anthropic: string | null; deepseek: string | null } | null>(null);
   const [key, setKey] = useState("");
-  const [err, setErr] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const load = () => invoke<{ anthropic: string | null; deepseek: string | null }>("ai_key_status").then(setStatus).catch(() => undefined);
   useEffect(() => {
     load();
@@ -267,9 +267,15 @@ export function AiSettings({
       {saved ? (
         <div className="rset__keyrow">
           <span>{t.rsKeySaved.replace("{0}", saved)}</span>
-          <button className="btn" onClick={() => invoke("ai_key_clear", { provider }).then(load)}>
-            {t.rsKeyClear}
-          </button>
+          {isAndroid ? (
+            <button className="iconbtn rset__keyclear" onClick={() => invoke("ai_key_clear", { provider }).then(load)} aria-label={t.rsKeyClear} title={t.rsKeyClear}>
+              <Icon name="trash" size={22} />
+            </button>
+          ) : (
+            <button className="btn" onClick={() => invoke("ai_key_clear", { provider }).then(load)}>
+              {t.rsKeyClear}
+            </button>
+          )}
         </div>
       ) : (
         <div className="rset__keyrow">
@@ -279,7 +285,7 @@ export function AiSettings({
             placeholder={t.rsKeyPlaceholder}
             onChange={(e) => {
               setKey(e.target.value);
-              setErr(false);
+              setErr(null);
             }}
           />
           <button
@@ -291,14 +297,14 @@ export function AiSettings({
                   setKey("");
                   load();
                 })
-                .catch(() => setErr(true))
+                .catch((e) => setErr(String(e) === "bad key" ? t.rsKeyBad : t.rsKeySaveFailed.replace("{0}", String(e))))
             }
           >
             {t.rsKeySave}
           </button>
         </div>
       )}
-      <p className="rset__hint">{err ? t.rsKeyBad : isAndroid ? t.mrAiHint : t.rsAiHint}</p>
+      <p className="rset__hint">{err ? err : isAndroid ? t.mrAiHint : t.rsAiHint}</p>
     </section>
   );
 }

@@ -9,7 +9,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-const SERVICE: &str = "pinknbook";
 const ANTHROPIC_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_COUNT_URL: &str = "https://api.anthropic.com/v1/messages/count_tokens";
 const ANTHROPIC_VERSION: &str = "2026-10-21";
@@ -37,16 +36,11 @@ fn account(p: Provider) -> &'static str {
     }
 }
 
-fn key_entry(p: Provider) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(SERVICE, account(p)).map_err(|e| e.to_string())
-}
-
+/// Windows Credential Manager on desktop, the Keystore-backed SecureStore on
+/// Android (the keyring crate has no Android backend and silently falls back
+/// to an in-memory mock there, so a saved key vanished at once).
 fn load_key(p: Provider) -> Result<Option<String>, String> {
-    match key_entry(p)?.get_password() {
-        Ok(k) => Ok(Some(k)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(e.to_string()),
-    }
+    crate::creds::secret_get(account(p))
 }
 
 /// The end of a key, enough to recognise it.
@@ -75,16 +69,13 @@ pub fn ai_key_set(provider: Provider, key: String) -> Result<String, String> {
     if key.len() < 20 || key.len() > 400 || key.chars().any(char::is_whitespace) {
         return Err("bad key".into());
     }
-    key_entry(provider)?.set_password(&key).map_err(|e| e.to_string())?;
+    crate::creds::secret_put(account(provider), &key)?;
     Ok(hint(&key))
 }
 
 #[tauri::command]
 pub fn ai_key_clear(provider: Provider) -> Result<(), String> {
-    match key_entry(provider)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.to_string()),
-    }
+    crate::creds::secret_remove(account(provider))
 }
 
 // ---- Request ------------------------------------------------------------------

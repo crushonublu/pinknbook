@@ -183,3 +183,73 @@
 @media (prefers-reduced-motion: reduce) { .is-android .mobile-sheet { animation: none; } }
 
 .is-android .mobile-amazon-signin { background: #d6336a; color: #fff; min-height: 44px; width: 100%; }
+
+/* Account dictionary uses the reader sheet shell with the account theme. */
+.is-android .mobile-dict-sheet .mr-sheet-layer { position: fixed; z-index: 80; }
+.is-android .mobile-dict-sheet .mr-sheet { background: var(--surface); color: var(--text); padding-bottom: calc(var(--mobile-safe-bottom) + 24px); }
+.is-android .mobile-dict-sheet .mr-sheet__head h2 { text-transform: none; letter-spacing: normal; color: var(--text); margin: 0; }
+.is-android .mobile-dict-sheet .mr-sheet__head button { background: var(--surface-2); color: var(--text); }
+.is-android .mobile-dict-sheet .mr-sheet__handle span { background: var(--border); }
+.is-android .mobile-dict-sheet .mr-sheet__content > .btn { width: 100%; min-height: 48px; margin-top: 16px; }
+.is-android .mobile-dict-sheet .muted { line-height: 1.6; margin: 8px 0 20px; }
+.is-android .mobile-dict-progress > div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; margin-bottom: 10px; }
+.is-android .mobile-dict-progress progress { display: block; width: 100%; height: 7px; border: none; border-radius: 4px; overflow: hidden; background: var(--border); accent-color: var(--accent); }
+.is-android .mobile-dict-progress progress::-webkit-progress-bar { background: var(--border); }
+.is-android .mobile-dict-progress progress::-webkit-progress-value { background: var(--accent); border-radius: 4px; }
+/* Android reading stats: compact overview with the original detail panels below. */
+.is-android .mobile-stats .stats { padding: 8px 20px calc(24px + var(--mobile-safe-bottom)); }
+.is-android .stats:has(.ms-hero) { display: flex; flex-direction: column; gap: 14px; }
+.is-android .stats:has(.ms-hero) > .stats__head, .is-android .stats:has(.ms-hero) > .stats__cards { display: none; }
+.is-android .stats .stats__panel { margin: 0; border-radius: 18px; }
+.is-android .ms-hero { display: flex; align-items: center; gap: 18px; overflow: visible; }
+.is-android .ms-ring { position: relative; width: 104px; height: 104px; flex: none; }
+.is-android .ms-ring .tring { width: 104px; height: 104px; }
+.is-android .ms-ring > div { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.is-android .ms-ring b { font-size: 22px; }
+.is-android .ms-ring small { font-size: 11px; color: var(--muted); }
+.is-android .ms-hero h2 { font-size: 18px; margin: 0; }
+.is-android .ms-hero p { font-size: 13px; line-height: 1.45; color: var(--muted); margin: 6px 0; }
+.is-android .ms-goal .mobile-picker__trigger { min-height: 36px; padding: 0 12px; border: 1px solid var(--border); border-radius: 18px; font-size: 13px; }
+.is-android .ms-goal .icon { display: none; }
+.is-android .ms-week .stats__panelhead { flex-wrap: wrap; gap: 4px; }
+.is-android .ms-week .stats__panelhead > span { font-size: 12px; color: var(--muted); }
+.is-android .ms-bars { position: relative; height: 120px; display: flex; align-items: end; gap: 6px; margin-top: 12px; }
+.is-android .ms-bars > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); z-index: 1; }
+.is-android .ms-bars > div > i { display: block; width: 22px; border-radius: 6px 6px 3px 3px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.is-android .ms-bars > .is-today > i { background: var(--accent); }
+.is-android .ms-bars .ms-goalline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); opacity: .6; }
+.is-android .ms-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.is-android .ms-tiles section { display: flex; flex-direction: column; gap: 3px; }
+.is-android .ms-tiles b { font-size: 24px; }
+.is-android .ms-tiles span { font-size: 12px; color: var(--muted); }
+.is-android .ms-badges button { border: none; background: none; color: var(--accent); font: inherit; min-height: 44px; }
+.is-android .ms-badges .stats__panelhead { flex-wrap: nowrap; }
+.is-android .ms-chips { display: flex; gap: 12px; overflow-x: auto; }
+.is-android .ms-chips button { width: 66px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--text); font-size: 11px; }
+.is-android .ms-chip__img { position: relative; display: grid; place-items: center; width: 52px; height: 52px; }
+.is-android .ms-chips img { width: 52px; height: 52px; object-fit: contain; }
+.is-android .ms-chips .is-locked img { filter: grayscale(1); opacity: .35; }
+.is-android .ms-chip__img .icon { position: absolute; right: 0; bottom: 0; padding: 3px; border-radius: 50%; background: var(--surface-2); color: var(--muted); }
+/* "Xem tất cả" sheet: no panel-in-a-sheet, no card borders, three airy columns. */
+.is-android .ms-badgesheet .stats__panel { border: none; background: none; padding: 0; box-shadow: none; }
+.is-android .ms-badgesheet .stats__panelhead h2 { display: none; }
+.is-android .ms-badgesheet .stats__panelhead { margin: 0 0 16px; }
+.is-android .ms-badgesheet .bgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px 12px; }
+.is-android .ms-badgesheet .bcard { width: auto; height: auto; min-width: 0; padding: 0; border: none; background: none; box-shadow: none; gap: 6px; }
+.is-android .ms-badgesheet .bcard:hover { transform: none; }
+.is-android .ms-badgesheet .bcard__img { width: 60px; height: 60px; }
+.is-android .ms-badgesheet .bcard__img img { padding: 6px; }
+.is-android .ms-badgesheet .bcard__name { font-size: 12.5px; line-height: 1.25; height: auto; min-height: 2.5em; }
+.is-android .ms-badgesheet .bcard > :last-child { width: 100%; }
+.is-android .ms-chips small { color: var(--muted); }
+.is-android .ms-kindle { display: flex; justify-content: space-between; }
+.is-android .ms-details { margin: 10px 0 0; font-size: 18px; }
+.is-android .stats > .mr-sheet-layer { position: fixed; z-index: 80; }
+.is-android .stats .hm { overflow-x: auto; }
+
+/* AI provider choice: the picked provider is filled with the accent, so it reads
+   as selected on any sheet background (the desktop raised-tile look vanished there). */
+.is-android .rset__ai .rset__seg { padding: 4px; border-radius: 12px; background: var(--surface-2, color-mix(in srgb, currentColor 8%, transparent)); }
+.is-android .rset__ai .rset__seg button { min-height: 40px; font-size: 15px; color: var(--muted, inherit); transition: background-color .2s, color .2s; }
+.is-android .rset__ai .rset__seg button.is-on { background: var(--accent); color: var(--accent-ink, #fff); font-weight: 600; box-shadow: none; }
+.is-android .rset__ai .rset__keyclear { flex: none; width: 44px; height: 44px; color: var(--muted); }
