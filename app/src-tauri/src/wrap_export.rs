@@ -2,7 +2,9 @@
 //!
 //! `wrap_export` is called with the PNG as the raw body of the request (a JSON
 //! list of two million numbers would be slow on a phone) and two headers:
-//! `x-file-name` and `x-action`, `save` or `share`.
+//! `x-file-name` and `x-action`, `save` or `share`. Android's IPC carries JSON
+//! only (a raw body arrives there as something else), so the app uses
+//! `wrap_export_base64` there: the same, with the PNG as base64 text.
 //!
 //! - Desktop `save`: a save dialog that starts in the Pictures folder.
 //! - Android `save`: the Photos gallery (`MediaStore`, folder Pictures/pntome).
@@ -69,6 +71,17 @@ pub async fn wrap_export(app: AppHandle, request: Request<'_>) -> Result<Option<
     let action = Action::parse(&header(&request, "x-action")?)?;
     let name = safe_file_name(&header(&request, "x-file-name")?);
     export(app, bytes.clone(), name, action).await
+}
+
+/// `wrap_export` for Android, whose IPC carries JSON only: the PNG as base64.
+#[tauri::command]
+pub async fn wrap_export_base64(app: AppHandle, data: String, file_name: String, action: String) -> Result<Option<String>, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(data.as_bytes()).map_err(|e| format!("The picture is not base64: {e}"))?;
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("The picture is not a PNG".into());
+    }
+    export(app, bytes, safe_file_name(&file_name), Action::parse(&action)?).await
 }
 
 #[cfg(desktop)]

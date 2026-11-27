@@ -138,6 +138,7 @@ pub fn run() {
             wrap::wrap_mark_seen,
             wrap::wraps_list,
             wrap_export::wrap_export,
+            wrap_export::wrap_export_base64,
             dict::dict_status,
             dict::dict_install,
             dict::dict_lookup,

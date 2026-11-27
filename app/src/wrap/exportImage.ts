@@ -10,6 +10,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { FONT_FACE_CSS } from "../fonts";
+import { isAndroid } from "../platform";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -158,6 +159,13 @@ export async function cardPng(card: HTMLElement, width: number, height: number):
   return new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("The picture could not be made."))), "image/png"));
 }
 
+/** Base64 of some bytes, a slice at a time (a spread of millions of arguments would overflow the stack). */
+function toBase64(bytes: Uint8Array): string {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
 /** What happened to a picture handed to the system. */
 export type Delivered = { done: true; where: string | null } | { done: false };
 
@@ -169,7 +177,10 @@ export type Delivered = { done: true; where: string | null } | { done: false };
  */
 export async function deliver(png: Blob, fileName: string, action: "save" | "share"): Promise<Delivered> {
   const bytes = new Uint8Array(await png.arrayBuffer());
-  const where = await invoke<string | null>("wrap_export", bytes, { headers: { "x-file-name": fileName, "x-action": action } });
+  // Android's IPC carries JSON only: a raw body does not arrive there as bytes, so the PNG goes as base64.
+  const where = isAndroid
+    ? await invoke<string | null>("wrap_export_base64", { data: toBase64(bytes), fileName, action })
+    : await invoke<string | null>("wrap_export", bytes, { headers: { "x-file-name": fileName, "x-action": action } });
   // The file dialog was closed without saving.
   return where === null && action === "save" ? { done: false } : { done: true, where };
 }
