@@ -332,6 +332,25 @@ export function WrapViewer({ lang, kind, periodStart, summary, onClose }: {
               />
             ))}
           </div>
+          {isAndroid ? (
+            <>
+              {/* Phone: one strip of tools (icon over a short word), then the two ways out. */}
+              <div className="wv__tools" role="group" aria-label={t.wrTools}>
+                <button className="wv__tool" onClick={() => setFormat(format === "story" ? "post" : "story")} disabled={!layout} aria-label={`${t.wrFormat}: ${format === "story" ? t.wrFormatStory : t.wrFormatPost}`}>
+                  <span className={`wv__tool-icon wv__format wv__format--${format}`} aria-hidden="true"><i /></span>
+                  {format === "story" ? t.wrFormatStory : t.wrFormatPost}
+                </button>
+                <button className="wv__tool" onClick={reroll} disabled={!layout}><span className="wv__tool-icon"><Icon name="refresh" size={20} /></span>{t.wrReroll}</button>
+                <button className="wv__tool" onClick={() => setTrayOpen(true)} disabled={!layout} aria-haspopup="dialog" aria-label={t.wrAddSticker}><span className="wv__tool-icon"><Icon name="plus" size={20} /></span>{t.wrSticker}</button>
+                <button className="wv__tool" onClick={autoArrange} disabled={!layout} aria-label={t.wrAutoLayout}><span className="wv__tool-icon"><Icon name="sparkle" size={20} /></span>{t.wrArrange}</button>
+              </div>
+              <div className="wv__actions">
+                <button className="wv__btn" onClick={() => makePicture("save")} disabled={!layout || busy} aria-busy={busy}><Icon name="image" size={18} />{busy ? t.wrExporting : t.wrSave}</button>
+                <button className="wv__btn wv__btn--primary" onClick={() => makePicture("share")} disabled={!layout || busy}><Icon name="upload" size={18} />{t.wrShare}</button>
+              </div>
+            </>
+          ) : (
+          <>
           <div className="wv__row">
             <button className="wv__btn" onClick={reroll} disabled={!layout}><Icon name="refresh" size={17} />{t.wrReroll}</button>
             <div className="wv__seg" role="group" aria-label={t.wrFormat}>
@@ -346,12 +365,10 @@ export function WrapViewer({ lang, kind, periodStart, summary, onClose }: {
           </div>
           <div className="wv__row wv__row--actions">
             <button className="wv__btn" onClick={() => makePicture("save")} disabled={!layout || busy} aria-busy={busy}><Icon name="image" size={17} />{busy ? t.wrExporting : t.wrSave}</button>
-            {isAndroid ? (
-              <button className="wv__btn wv__btn--primary" onClick={() => makePicture("share")} disabled={!layout || busy}><Icon name="upload" size={17} />{t.wrShare}</button>
-            ) : (
-              <button className="wv__btn wv__btn--primary" onClick={() => makePicture("copy")} disabled={!layout || busy}><Icon name="copy" size={17} />{t.wrCopy}</button>
-            )}
+            <button className="wv__btn wv__btn--primary" onClick={() => makePicture("copy")} disabled={!layout || busy}><Icon name="copy" size={17} />{t.wrCopy}</button>
           </div>
+          </>
+          )}
         </div>
 
         {trayOpen && <StickerTray lang={lang} relevant={relevant} badges={owned} onPick={add} onClose={() => setTrayOpen(false)} />}

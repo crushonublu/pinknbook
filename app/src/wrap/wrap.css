@@ -194,6 +194,22 @@
 .is-android .wv__swatches { justify-content: center; }
 .is-android .wv__row { justify-content: center; }
 .is-android .wv__head h1 { font-size: 20px; }
+/* Phone: the tools as one strip of icons with a word under each, then save + share. */
+.is-android .wv__side { gap: 16px; }
+.is-android .wv__swatches { gap: 12px; }
+.is-android .wv__tools { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.is-android .wv__tool { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 2px 0; border: 0; background: none; color: var(--text); font: 500 12.5px var(--st-ui, inherit); white-space: nowrap; cursor: pointer; }
+.is-android .wv__tool:disabled { opacity: .5; }
+.is-android .wv__tool:focus-visible { outline: none; }
+.is-android .wv__tool:focus-visible .wv__tool-icon { outline: 2px solid var(--accent); outline-offset: 2px; }
+.is-android .wv__tool-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--surface-2); transition: background-color .15s; }
+.is-android .wv__tool:active .wv__tool-icon { background: color-mix(in srgb, var(--accent) 24%, var(--surface-2)); }
+/* The format as its own shape: a tall frame for a story, a square for a post. */
+.is-android .wv__format i { display: block; border: 2px solid currentColor; border-radius: 4px; }
+.is-android .wv__format--story i { width: 12px; height: 20px; }
+.is-android .wv__format--post i { width: 17px; height: 17px; }
+.is-android .wv__actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+.is-android .wv__actions .wv__btn { min-height: 50px; border-radius: 25px; font-size: 15px; }
 @media (max-width: 760px) {
   .wv { padding: 0; }
   .wv__panel { display: flex; flex-direction: column; border-radius: 0; border: 0; }
