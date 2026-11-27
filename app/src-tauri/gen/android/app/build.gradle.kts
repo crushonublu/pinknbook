@@ -14,6 +14,16 @@ val tauriProperties = Properties().apply {
     }
 }
 
+/** Release signing, kept outside the repo: `~/.tauri/pntome-android.properties`
+ *  (or the path in PNTOME_ANDROID_SIGNING) with storeFile, keyAlias and passwordFile.
+ *  Without it the release APK is built unsigned. See docs/release.md. */
+val releaseSigning = Properties().apply {
+    val path = System.getenv("PNTOME_ANDROID_SIGNING")
+        ?: "${System.getProperty("user.home")}/.tauri/pntome-android.properties"
+    val f = File(path)
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 android {
     compileSdk = 37
     namespace = "com.pinknbook.app"
@@ -24,6 +34,17 @@ android {
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (releaseSigning.getProperty("storeFile") != null) {
+            create("release") {
+                val password = File(releaseSigning.getProperty("passwordFile")).readText().trim()
+                storeFile = File(releaseSigning.getProperty("storeFile"))
+                storePassword = password
+                keyAlias = releaseSigning.getProperty("keyAlias")
+                keyPassword = password
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -39,6 +60,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             optimization {
                enable = true
             }

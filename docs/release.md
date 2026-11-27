@@ -64,6 +64,28 @@ All commands are PowerShell, run from the repo root unless noted.
 
 5. **Check it**: open an older installed version and use **Kiểm tra cập nhật**. It should offer the new version.
 
+## Android
+
+The Android APK is signed with a separate Java keystore, also kept outside the repo:
+
+| File | What it is |
+|---|---|
+| `%USERPROFILE%\.tauri\pntome-android.jks` | Release keystore (alias `pntome`). **Never commit it.** |
+| `%USERPROFILE%\.tauri\pntome-android.password` | Its password (store and key) |
+| `%USERPROFILE%\.tauri\pntome-android.properties` | `storeFile`, `keyAlias`, `passwordFile`: read by `gen/android/app/build.gradle.kts` (or set `PNTOME_ANDROID_SIGNING` to another properties file) |
+
+**Back these up with the updater key.** Android only installs an update over an existing install when it is signed by the same key; with a lost key, users must uninstall (losing app data) to install a new build. Without the properties file the release APK is built unsigned.
+
+Build (after the version bump above; `tauri.properties` takes the version from `tauri.conf.json`):
+
+```powershell
+cd app
+npm run tauri android build -- --apk
+cd ..
+```
+
+The signed APK is `app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`. Upload it to the same GitHub Release as `pntome_x.y.z_android.apk`. The Android app has no in-app updater yet: users install the new APK by hand.
+
 ## Notes
 
 - **0.1.0 has no updater.** People on 0.1.0 install 0.1.1 (the first version with the updater) by hand once; after that, updates arrive in the app.
