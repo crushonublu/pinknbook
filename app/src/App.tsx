@@ -21,6 +21,7 @@ import { coverOf, morph } from "./transitions";
 import { AccountMenu } from "./AccountMenu";
 import { WindowControls } from "./WindowControls";
 import { isAndroid } from "./platform";
+import { LibrarySkeleton } from "./LibrarySkeleton";
 import { Icon } from "./icons";
 import { KindlePushDialog, wantsKindlePush, type KindlePushRequest } from "./KindlePush";
 import { MobileSendSheet, SendDialog, useSendQueue } from "./SendToKindle";
@@ -78,6 +79,8 @@ export default function App() {
   const hasLib = auth === "in" || auth === "guest";
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [library, setLibrary] = useState<LibraryRow[]>([]);
+  /** The library has been read once: until then an empty list means "not loaded yet", not "no books". */
+  const [libLoaded, setLibLoaded] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -307,9 +310,13 @@ export default function App() {
   }, [t]);
 
   async function refreshLibrary() {
-    const rows = await invoke<LibraryRow[]>("get_library");
-    setLibrary(rows);
-    return rows;
+    try {
+      const rows = await invoke<LibraryRow[]>("get_library");
+      setLibrary(rows);
+      return rows;
+    } finally {
+      setLibLoaded(true);
+    }
   }
 
   // Books added from watched folders: soon after opening, then every few minutes.
@@ -690,7 +697,9 @@ export default function App() {
         </div>
       )}
 
-      {auth === "loading" && <div className="center muted">{t.loading}</div>}
+      {auth === "loading" && (isAndroid
+        ? <main className="mobile-content mobile-home mobile-boot"><LibrarySkeleton kind="home" label={t.loading} /></main>
+        : <div className="center muted">{t.loading}</div>)}
 
       {auth === "out" && (
         <div className="hero">
@@ -719,7 +728,7 @@ export default function App() {
       {isAndroid && hasLib && !reading && !showStats && mobileTab === "home" && (
         <MobileHome
           onSync={auth === "in" ? startSync : undefined} syncing={busy === t.syncing} syncBusy={!!busy} progress={progress}
-          rows={visible} lang={lang} summary={stats.summary} wrapOffers={wrapOffers}
+          rows={visible} loading={!libLoaded} lang={lang} summary={stats.summary} wrapOffers={wrapOffers}
           onRead={(r) => actions.read(r, null)} onDetail={(r) => actions.details(r, null)}
           onStats={() => { setShowStats(true); stats.refresh(); }}
           onAdd={pickBooks} adding={!!localImport.state.progress}
@@ -731,7 +740,7 @@ export default function App() {
         <MobileLibrary
           onSync={auth === "in" ? startSync : undefined} syncing={busy === t.syncing} syncBusy={!!busy} progress={progress}
           matchFilter={onlyMatches} onClearMatches={() => setOnlyMatches(false)}
-          rows={shown} total={visible.length} mixed={mixedSources} lang={lang}
+          rows={shown} total={visible.length} loading={!libLoaded} mixed={mixedSources} lang={lang}
           query={query} setQuery={setQuery} sort={sort} setSort={setSort}
           status={statusFilter} setStatus={setStatusFilter}
           source={activeMobileSource} setSource={setMobileSource}
@@ -851,7 +860,7 @@ export default function App() {
           </div>
 
           {library.length === 0 ? (
-            <EmptyLibrary lang={lang} onAdd={pickBooks} />
+            libLoaded ? <EmptyLibrary lang={lang} onAdd={pickBooks} /> : <LibrarySkeleton kind="grid" label={t.loading} />
           ) : (
           <Library
             rows={shown}

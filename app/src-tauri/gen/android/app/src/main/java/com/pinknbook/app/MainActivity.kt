@@ -250,6 +250,8 @@ class MainActivity : TauriActivity() {
 
   override fun onWebViewCreate(webView: WebView) {
     mainWebView = webView
+    // Until the page draws, the web view shows its own background: the app's dark one, not white.
+    webView.setBackgroundColor(android.graphics.Color.parseColor("#0f1115"))
     super.onWebViewCreate(webView)
     val bridge = ReaderGestures(webView)
     webView.addJavascriptInterface(bridge, "PntomeReader")

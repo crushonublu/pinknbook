@@ -4,6 +4,7 @@ import { STR, type Lang } from "../i18n";
 import { BookCover } from "../BookCover";
 import { continueBook, isLocal, isReadable, statusLabel } from "../bookInfo";
 import { EmptyLibrary } from "../LocalImport";
+import { LibrarySkeleton } from "../LibrarySkeleton";
 import { Icon } from "../icons";
 import { HomeStreakCard, HomeYearRow } from "../stats/HomeCards";
 import type { StatsSummary } from "../Stats";
@@ -50,7 +51,7 @@ function MobileSyncProgress({ syncing, progress, lang }: { syncing: boolean; pro
   return syncing && <p className="mobile-sync-progress" role="status">{STR[lang].mobileSyncProgress.replace("{0}", String(progress?.done ?? 0)).replace("{1}", String(progress?.total ?? 0))}</p>;
 }
 
-export function MobileHome({ rows, lang, summary, wrapOffers, onRead, onDetail, onStats, onAdd, onSearch, onReadingBooks, adding, onSync, syncing, syncBusy, progress }: { rows: LibraryRow[]; lang: Lang; summary: StatsSummary | null; wrapOffers?: ReactNode; onRead: (r: LibraryRow) => void; onDetail: (r: LibraryRow) => void; onStats: () => void; onAdd: () => void; onSearch: () => void; onReadingBooks?: () => void; adding: boolean } & MobileSyncProps) {
+export function MobileHome({ rows, loading, lang, summary, wrapOffers, onRead, onDetail, onStats, onAdd, onSearch, onReadingBooks, adding, onSync, syncing, syncBusy, progress }: { rows: LibraryRow[]; loading?: boolean; lang: Lang; summary: StatsSummary | null; wrapOffers?: ReactNode; onRead: (r: LibraryRow) => void; onDetail: (r: LibraryRow) => void; onStats: () => void; onAdd: () => void; onSearch: () => void; onReadingBooks?: () => void; adding: boolean } & MobileSyncProps) {
   const t = STR[lang]; const book = continueBook(rows);
   const reading = rows.filter((r) => r.status === "reading" && r.asin !== book?.asin);
   const unread = rows.filter((r) => r.status === "unread").sort((a, b) => b.purchase_date.localeCompare(a.purchase_date));
@@ -60,7 +61,7 @@ export function MobileHome({ rows, lang, summary, wrapOffers, onRead, onDetail, 
   ];
   return <><MobileHeader title={t.mobileHome}><button className="iconbtn" onClick={onSearch} aria-label={t.searchPlaceholder}><Icon name="search" size={20} /></button><MobileSyncButton onSync={onSync} syncing={syncing} syncBusy={syncBusy} progress={progress} lang={lang} /><button className="iconbtn" onClick={onAdd} disabled={adding} aria-label={t.addBooks}><Icon name="plus" size={20} /></button></MobileHeader>
     <MobileSyncProgress syncing={syncing} progress={progress} lang={lang} />
-    <main className="mobile-content mobile-home">{!rows.length ? <EmptyLibrary lang={lang} onAdd={onAdd} /> : <>
+    <main className="mobile-content mobile-home">{loading ? <LibrarySkeleton kind="home" label={t.loading} /> : !rows.length ? <EmptyLibrary lang={lang} onAdd={onAdd} /> : <>
       {wrapOffers}
       <HomeStreakCard lang={lang} summary={summary} reading={book ? [book, ...reading] : reading} onOpen={onStats} />
       {book && <button className="mobile-continue" onClick={() => onRead(book)}><span className="mobile-continue__cover"><BookCover row={book} /></span><span className="mobile-continue__info"><small>{t.statusReading}</small><strong>{book.title}</strong><em>{book.author || t.noAuthor}</em><span className="mobile-progress"><span><i style={{ width: `${percent(book)}%` }} /></span><span>{percent(book)}%</span></span></span></button>}
@@ -69,8 +70,8 @@ export function MobileHome({ rows, lang, summary, wrapOffers, onRead, onDetail, 
     </>}</main></>;
 }
 
-export function MobileLibrary({ rows, total, mixed, lang, query, setQuery, sort, setSort, status, setStatus, source, setSource, view, setView, focus, onAdd, adding, onRead, onDetail, onSync, syncing, syncBusy, progress, matchFilter, onClearMatches }: {
-  rows: LibraryRow[]; total: number; mixed: boolean; lang: Lang; query: string; setQuery: (q: string) => void; sort: SortKey; setSort: (s: SortKey) => void; status: ReadStatus | null; setStatus: (s: ReadStatus | null) => void; source: MobileSource; setSource: (s: MobileSource) => void; view: LibraryView; setView: (v: LibraryView) => void; focus: number; onAdd: () => void; adding: boolean; onRead: (r: LibraryRow) => void; onDetail: (r: LibraryRow) => void; matchFilter: boolean; onClearMatches: () => void;
+export function MobileLibrary({ rows, total, loading, mixed, lang, query, setQuery, sort, setSort, status, setStatus, source, setSource, view, setView, focus, onAdd, adding, onRead, onDetail, onSync, syncing, syncBusy, progress, matchFilter, onClearMatches }: {
+  rows: LibraryRow[]; total: number; loading?: boolean; mixed: boolean; lang: Lang; query: string; setQuery: (q: string) => void; sort: SortKey; setSort: (s: SortKey) => void; status: ReadStatus | null; setStatus: (s: ReadStatus | null) => void; source: MobileSource; setSource: (s: MobileSource) => void; view: LibraryView; setView: (v: LibraryView) => void; focus: number; onAdd: () => void; adding: boolean; onRead: (r: LibraryRow) => void; onDetail: (r: LibraryRow) => void; matchFilter: boolean; onClearMatches: () => void;
 } & MobileSyncProps) {
   const t = STR[lang]; const search = useRef<HTMLInputElement>(null);
   useEffect(() => { if (focus) search.current?.focus(); }, [focus]);
@@ -79,6 +80,6 @@ export function MobileLibrary({ rows, total, mixed, lang, query, setQuery, sort,
     <main className="mobile-content mobile-library"><label className="search"><Icon name="search" size={18} /><input ref={search} type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t.searchPlaceholder} aria-label={t.searchPlaceholder} /></label>
       <div className="mobile-chips">{matchFilter && <button className="is-active mobile-match-filter" onClick={onClearMatches}>{t.matchChip}<Icon name="close" size={16} /></button>}<button className={!status && source === "all" ? "is-active" : ""} onClick={() => { setStatus(null); setSource("all"); }}>{t.all}</button>{(["reading", "unread", "finished", "abandoned"] as const).map((s) => <button key={s} className={status === s ? "is-active" : ""} onClick={() => setStatus(status === s ? null : s)}>{statusLabel(t, s)}</button>)}{mixed && (["local", "amazon"] as const).map((s) => <button key={s} className={source === s ? "is-active" : ""} onClick={() => setSource(source === s ? "all" : s)}>{s === "local" ? t.typeLocal : t.mobileKindle}</button>)}</div>
       <div className="mobile-library__tools"><div className="mobile-library__sort"><Icon name="sort" size={16} /><MobilePicker label={t.sortBy} value={sort} options={[{ value: "recent", label: t.sortRecent }, { value: "title", label: t.sortTitle }, { value: "author", label: t.sortAuthor }, { value: "progress", label: t.sortProgress }]} onChange={setSort} /></div><div className="seg">{(["grid", "list"] as const).map((v) => <button key={v} className={`seg__btn${(view === "list" ? "list" : "grid") === v ? " seg__btn--on" : ""}`} aria-label={v === "grid" ? t.viewGrid : t.viewList} aria-pressed={(view === "list" ? "list" : "grid") === v} onClick={() => setView(v)}><Icon name={v} size={18} /></button>)}</div></div>
-      {!total ? <EmptyLibrary lang={lang} onAdd={onAdd} /> : !rows.length ? <p className="center muted">{t.mobileNoResults}</p> : <div className={view === "list" ? "mobile-book-list" : "mobile-book-grid"}>{rows.map((r) => <MobileBook key={r.asin} row={r} lang={lang} list={view === "list"} onRead={onRead} onDetail={onDetail} />)}</div>}
+      {loading ? <LibrarySkeleton kind="grid" label={t.loading} /> : !total ? <EmptyLibrary lang={lang} onAdd={onAdd} /> : !rows.length ? <p className="center muted">{t.mobileNoResults}</p> : <div className={view === "list" ? "mobile-book-list" : "mobile-book-grid"}>{rows.map((r) => <MobileBook key={r.asin} row={r} lang={lang} list={view === "list"} onRead={onRead} onDetail={onDetail} />)}</div>}
     </main></>;
 }
