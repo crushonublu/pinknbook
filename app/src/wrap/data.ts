@@ -2,8 +2,8 @@
 // books go on the cover wall, the one highlight fact, week numbers and dates.
 
 import { STR, type Lang } from "../i18n";
-import { addDays, fmt, minutesOf, parseDay } from "../stats/format";
-import type { PeriodDay, PeriodStats } from "../stats/types";
+import { addDays, daySeconds, fmt, minutesOf, parseDay } from "../stats/format";
+import type { PeriodStats } from "../stats/types";
 import { pickFact, type ShownFact } from "./factPick";
 
 /** A book on a card: how it got there. */
@@ -14,8 +14,7 @@ export interface WallBook {
   seconds: number;
 }
 
-/** Seconds read on a day, from every source. */
-export const daySeconds = (d: PeriodDay) => d.app_sec + d.kindle_sec + d.manual_sec;
+export { daySeconds };
 
 /** Seconds read of each book in the period (from the days). */
 function secondsByBook(p: PeriodStats): Map<string, number> {

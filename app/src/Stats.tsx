@@ -8,12 +8,15 @@ import { DesktopStatsPage } from "./stats/DesktopStatsPage";
 import { StatsPage as MobileStatsPage } from "./stats/StatsPage";
 import { StreakPopover } from "./stats/StreakPopover";
 import type { LibraryRow } from "./types";
-import type { BadgeId, StatsSummary, WrapsAccess } from "./stats/types";
+import type { AmazonDays, BadgeId, KindleTick, StatsSummary, WrapsAccess } from "./stats/types";
 
 export type { BadgeId, StatsSummary } from "./stats/types";
 
 /** How often Kindle reading is estimated while the app is open. */
 const KINDLE_EVERY_MS = 30 * 60_000;
+/** The same for the hour after a book's position moved: the reading may still be going on elsewhere. */
+const KINDLE_ACTIVE_EVERY_MS = 10 * 60_000;
+const KINDLE_ACTIVE_FOR_MS = 60 * 60_000;
 
 export type Toast = { key: string; id: BadgeId | "backfill"; tier: number; count?: number };
 
@@ -48,20 +51,42 @@ export function useStats(signedIn: boolean) {
         .then((n) => {
           if (!stop && n > 0) refresh();
         });
-    const tick = () =>
-      invoke<number>("kindle_activity_tick")
-        .catch(() => 0)
-        .then(() => {
-          if (!stop) refresh();
+    let timer = 0;
+    let movedAt = 0;
+    let lastAt = 0;
+    let running = false;
+    // Each look schedules the next: sooner for an hour after any position moved.
+    const tick = () => {
+      if (running) return;
+      running = true;
+      window.clearTimeout(timer);
+      lastAt = Date.now();
+      invoke<KindleTick>("kindle_activity_tick")
+        .catch(() => null)
+        .then((r) => {
+          running = false;
+          if (stop) return;
+          if (r?.moved) movedAt = Date.now();
+          timer = window.setTimeout(tick, Date.now() - movedAt < KINDLE_ACTIVE_FOR_MS ? KINDLE_ACTIVE_EVERY_MS : KINDLE_EVERY_MS);
+          refresh();
           return fillGenres();
         });
+    };
+    // Back from reading in the Kindle app (Android) or another window: look again at once,
+    // at most once a minute.
+    const visible = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastAt > 60_000) tick();
+    };
+    // The Android web view does not always report visibility when the app comes back; focus it does.
+    document.addEventListener("visibilitychange", visible);
+    window.addEventListener("focus", visible);
     refresh();
-    const first = window.setTimeout(tick, 4000);
-    const iv = window.setInterval(tick, KINDLE_EVERY_MS);
+    timer = window.setTimeout(tick, 4000);
     return () => {
       stop = true;
-      window.clearTimeout(first);
-      window.clearInterval(iv);
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visible);
+      window.removeEventListener("focus", visible);
     };
   }, [signedIn, refresh]);
 
@@ -124,6 +149,18 @@ export function StreakButton({ lang, s, onClick }: { lang: Lang; s: StatsSummary
 
 /** The Stats page: the same cards (src/stats), stacked on Android and in wrapping rows on the desktop. */
 export function StatsPage(props: { lang: Lang; s: StatsSummary | null; loadFailed?: boolean; rows: LibraryRow[]; onBack: () => void; onChanged: () => void; wraps?: WrapsAccess }) {
+  const { s, onChanged } = props;
+  // Opening Stats asks Amazon for its days read when they are due (at most every 6 hours);
+  // the numbers load again only if that brought news.
+  const known = s?.amazon_days.fetched_at ?? null;
+  const ready = !!s;
+  useEffect(() => {
+    if (!ready) return;
+    invoke<AmazonDays>("amazon_days_refresh", { force: false })
+      .then((a) => a.fetched_at !== known && onChanged())
+      .catch(() => undefined);
+    // Once per visit: `known` and `onChanged` are read as they are when Stats opens.
+  }, [ready]);
   return isAndroid ? <MobileStatsPage {...props} /> : <DesktopStatsPage {...props} />;
 }
 

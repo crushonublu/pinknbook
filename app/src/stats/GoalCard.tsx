@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { STR, type Lang } from "../i18n";
-import { fmt, fmtDuration, addDays, weekStart } from "./format";
+import { fmt, fmtDuration, addDays, daySeconds, weekStart } from "./format";
 import { yearPace } from "./goal";
 import { GoalRing } from "./GoalRing";
 import type { LibraryRow } from "../types";
@@ -36,7 +36,7 @@ export function GoalCard({ lang, s, days, rows, books, onChangeGoal, yearOnly = 
   const secOf = (day: string) => {
     if (day === s.today) return todaySec;
     const d = days.get(day);
-    return d ? d.app_sec + d.kindle_sec + d.manual_sec : 0;
+    return d ? daySeconds(d) : 0;
   };
   const start = weekStart(s.today);
   const week = Array.from({ length: 7 }, (_, i) => addDays(start, i));

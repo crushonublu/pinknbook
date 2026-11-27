@@ -5,8 +5,13 @@
 //!   is dropped on the reader side) plus how far it got (Kindle positions);
 //! - Kindle apps and devices, estimated: Amazon only tells us the last-read
 //!   position, so every so often we look at how far each book has moved and
-//!   turn that into minutes at the reader's own speed.
-//!
+//!   turn that into minutes at the reader's own speed. When the reading
+//!   happened over several days, the minutes are spread over the days Amazon
+//!   says were read (`amazon_days.rs`);
+//! - the Kindle app on this phone, measured: the time a book was open in it
+//!   (`kindle_app.rs`). A book's move that this measured time explains is
+//!   not estimated again (`estimate_left`); it only names the book the
+//!   measured time goes to (a `PHONE_SLOT` row without seconds);
 //! - paper books, typed in by hand (`manual`).
 //!
 //! A day starts at 04:00 local time, so late-night reading counts for the
@@ -14,9 +19,9 @@
 //! one missed day a week is forgiven (a freeze) so a streak survives it.
 //! The week / month / year views built on this log live in `period.rs`.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, Timelike};
+use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, TimeZone, Timelike};
 use rusqlite::Connection;
 use tauri::{AppHandle, Manager, State};
 
@@ -35,11 +40,14 @@ CREATE TABLE IF NOT EXISTS reading_log (
     merged    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (day, asin, source, slot)
 );
+-- The last Kindle position seen for a book: when it was last looked at, and
+-- since when it has stood there (`since`, NULL in rows from before it existed).
 CREATE TABLE IF NOT EXISTS kindle_obs (
     asin        TEXT PRIMARY KEY,
     location    INTEGER NOT NULL,
     observed_at INTEGER NOT NULL,
-    rebase      INTEGER NOT NULL DEFAULT 0
+    rebase      INTEGER NOT NULL DEFAULT 0,
+    since       INTEGER
 );
 CREATE TABLE IF NOT EXISTS badge_unlock (
     badge       TEXT NOT NULL,
@@ -62,17 +70,29 @@ CREATE TABLE IF NOT EXISTS paper_book (
     asin  TEXT PRIMARY KEY,
     title TEXT NOT NULL
 );
+-- Days Amazon says the account read on any Kindle (see amazon_days.rs).
+CREATE TABLE IF NOT EXISTS amazon_day_read (
+    day TEXT PRIMARY KEY
+);
 ";
 
+/// Columns added to the tables of `SCHEMA` after they were first created.
+pub(crate) fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    if conn.prepare("SELECT since FROM kindle_obs LIMIT 0").is_err() {
+        conn.execute_batch("ALTER TABLE kindle_obs ADD COLUMN since INTEGER")?;
+    }
+    Ok(())
+}
+
 /// Kindle positions per minute until the reader has measured its own speed
-/// (about 250 words a minute of Vietnamese text with its markup).
-const DEFAULT_POS_PER_MIN: f64 = 1500.0;
+/// (Vietnamese text with its markup; timed on a Kindle at about 2300 a minute).
+const DEFAULT_POS_PER_MIN: f64 = 2000.0;
 /// In-app reading needed before trusting the measured speed.
 const MIN_SPEED_SECONDS: i64 = 600;
 /// A jump bigger than this share of the book is navigation, not reading.
 const MAX_JUMP: f64 = 0.15;
-/// Books checked per Kindle activity pass.
-const KINDLE_BOOKS: usize = 10;
+/// Books checked per Kindle activity pass: every book being read, up to this.
+const KINDLE_BOOKS: usize = 25;
 /// Default daily goal, minutes.
 pub const DEFAULT_GOAL: i64 = 10;
 /// Default yearly book goal.
@@ -81,6 +101,9 @@ const DEFAULT_GOAL_BOOKS: i64 = 12;
 /// the most minutes per call and per day.
 const MANUAL_DAYS_BACK: i64 = 7;
 const MANUAL_MAX_MINUTES: i64 = 600;
+/// Slot of Kindle minutes put on a day Amazon says was read: the hour is not
+/// known.
+const KINDLE_EST_SLOT: &str = "kindle_est";
 
 /// Hours after midnight at which a new reading day begins.
 const DAY_START_HOUR: i64 = 4;
@@ -116,7 +139,8 @@ pub(crate) enum SlotClass {
     Early,
     /// Any other time of day (`h06`..`h23`, legacy `day`).
     Day,
-    /// Typed in by hand: no time of day.
+    /// No time of day: typed in by hand, or Kindle minutes put on a day
+    /// Amazon says was read.
     Manual,
 }
 
@@ -130,7 +154,7 @@ pub(crate) fn slot_class(slot: &str) -> SlotClass {
     match (slot, slot_hour(slot)) {
         ("night", _) | (_, Some(0..=3)) => SlotClass::Night,
         ("early", _) | (_, Some(4..=5)) => SlotClass::Early,
-        ("manual", _) => SlotClass::Manual,
+        ("manual" | KINDLE_EST_SLOT, _) => SlotClass::Manual,
         _ => SlotClass::Day,
     }
 }
@@ -171,6 +195,12 @@ pub fn kindle_estimates_on(db: &Db) -> bool {
     setting(db, "kindle_estimates").map(|v| v != "0").unwrap_or(true)
 }
 
+/// Time in the Kindle app on this phone counts (on unless switched off; there
+/// is nothing to count before usage access is granted).
+pub fn kindle_app_usage_on(db: &Db) -> bool {
+    setting(db, "kindle_app_usage").map(|v| v != "0").unwrap_or(true)
+}
+
 fn add_log(db: &Db, day: NaiveDate, asin: &str, source: &str, slot: &str, seconds: i64, positions: i64, merged: bool) {
     let conn = db.0.lock().unwrap();
     let _ = conn.execute(
@@ -204,11 +234,29 @@ pub(crate) fn record_reading(db: &Db, now: NaiveDateTime, asin: &str, seconds: i
     add_log(db, day, asin, "app", &slot, seconds.min(3600), positions.clamp(0, 2_000_000), false);
 }
 
-/// The app itself moved the Kindle position (pushing where the reader got
-/// to): the next Kindle check must not count that as reading elsewhere.
-pub fn note_own_position(db: &Db, asin: &str) {
+/// Record a look at a book's Kindle position (`?1` asin, `?2` location, `?3`
+/// now): `since` moves only when the position does. A position the app pushed
+/// meanwhile (`note_own_position`, newer) is not overwritten by this older look.
+const OBSERVE_SQL: &str = "
+    INSERT INTO kindle_obs (asin, location, observed_at, rebase, since) VALUES (?1, ?2, ?3, 0, ?3)
+    ON CONFLICT(asin) DO UPDATE SET
+      since = CASE WHEN kindle_obs.location = excluded.location AND kindle_obs.rebase = 0
+                   THEN IFNULL(kindle_obs.since, kindle_obs.observed_at) ELSE excluded.since END,
+      location = excluded.location, observed_at = excluded.observed_at, rebase = 0
+    WHERE kindle_obs.observed_at <= excluded.observed_at";
+
+/// The app itself moved the Kindle position to `location` (pushing where the
+/// reader got to): that is the new starting point, so the next Kindle check
+/// counts only what was read elsewhere after it.
+pub fn note_own_position(db: &Db, asin: &str, location: i64) {
     let conn = db.0.lock().unwrap();
-    let _ = conn.execute("UPDATE kindle_obs SET rebase = 1 WHERE asin = ?1", [asin]);
+    let now = Local::now().timestamp();
+    let _ = conn.execute(
+        "INSERT INTO kindle_obs (asin, location, observed_at, rebase, since) VALUES (?1, ?2, ?3, 0, ?3)
+         ON CONFLICT(asin) DO UPDATE SET location = excluded.location, observed_at = excluded.observed_at,
+           rebase = 0, since = excluded.since",
+        rusqlite::params![asin, location, now],
+    );
 }
 
 /// Positions per minute, measured from in-app reading when there is enough.
@@ -229,15 +277,113 @@ fn reading_speed(db: &Db) -> f64 {
     }
 }
 
+/// What a Kindle pass found.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct KindleTick {
+    /// Minutes of reading estimated and credited.
+    pub minutes: i64,
+    /// Some book's position moved since the last look (the page then checks
+    /// again sooner: the reading may still be going on).
+    pub moved: bool,
+}
+
+/// Spread `seconds` of reading found at `today` over the days Amazon says
+/// were read after the reader's previous look on `prev_day`: equal shares
+/// over the read days in `(prev_day, today]`, the odd seconds to the earliest
+/// days, so the total is exact. When none of those days is known to be read
+/// (or there was no gap) everything stays on `today`.
+pub(crate) fn split_over_days(
+    seconds: i64,
+    prev_day: NaiveDate,
+    today: NaiveDate,
+    days_read: &BTreeSet<NaiveDate>,
+) -> Vec<(NaiveDate, i64)> {
+    let days: Vec<NaiveDate> = if prev_day < today {
+        days_read.range(prev_day + Duration::days(1)..=today).copied().collect()
+    } else {
+        vec![]
+    };
+    if days.is_empty() {
+        return vec![(today, seconds)];
+    }
+    let n = days.len() as i64;
+    days.iter()
+        .enumerate()
+        .map(|(i, d)| (*d, seconds / n + ((i as i64) < seconds % n) as i64))
+        .filter(|(_, s)| *s > 0)
+        .collect()
+}
+
+/// When a Kindle estimate was found, for `credit_estimate`.
+struct Found {
+    /// The reading day of the reader's previous look.
+    prev_day: NaiveDate,
+    today: NaiveDate,
+    /// Hour slot of this look.
+    slot: String,
+    /// More than 36 hours since the previous look.
+    long_gap: bool,
+}
+
+/// `reading_log.slot` of a book's move read in this phone's Kindle app: no
+/// seconds (the measured `kindle_app` time is that reading), only the
+/// positions, which `kindle_app::store` uses to name the book. `read_log`
+/// leaves these rows out.
+pub(crate) const PHONE_SLOT: &str = "kindle_phone";
+
+/// What is left of an estimate of `estimate` seconds when this phone's Kindle
+/// app had a book open for `measured` seconds over the same span: the
+/// estimate is only a guess at the reader's speed, so up to twice the measured
+/// time it is that reading; beyond, the rest was read on another device.
+pub(crate) fn estimate_left(estimate: i64, measured: i64) -> i64 {
+    if measured <= 0 {
+        estimate
+    } else if estimate <= 2 * measured {
+        0
+    } else {
+        estimate - measured
+    }
+}
+
+/// Credit an estimate of `secs` (for `positions` Kindle positions) to a book.
+/// After a gap it goes to the days Amazon says were read, without an hour; else
+/// to today, in the hour of this look (Amazon only tells us where the book got to).
+fn credit_estimate(db: &Db, asin: &str, secs: i64, positions: i64, found: &Found, days_read: &BTreeSet<NaiveDate>) {
+    let shares = split_over_days(secs, found.prev_day, found.today, days_read);
+    let spread = found.prev_day < found.today && shares.iter().all(|(d, _)| days_read.contains(d));
+    if spread {
+        let merged = found.long_gap || shares.len() > 1;
+        for (day, share) in shares {
+            add_log(db, day, asin, "kindle", KINDLE_EST_SLOT, share, positions * share / secs, merged);
+        }
+    } else {
+        add_log(db, found.today, asin, "kindle", &found.slot, secs, positions, found.long_gap);
+    }
+}
+
 /// Look at how far the books being read have moved on Kindle and credit the
-/// estimated minutes to today. Returns the minutes added.
+/// estimated minutes (see `credit_estimate`); also the time the Kindle app was
+/// on screen on this phone (`kindle_app.rs`) and, when due, the days Amazon
+/// says were read (`amazon_days.rs`).
 #[tauri::command]
-pub async fn kindle_activity_tick(app: AppHandle) -> Result<i64, String> {
+pub async fn kindle_activity_tick(app: AppHandle) -> Result<KindleTick, String> {
+    let db: State<Db> = app.state();
+    if kindle_estimates_on(&db) && creds::load().ok().flatten().is_some() {
+        crate::amazon_days::refresh(&app, false).await;
+    }
+    let positions = estimate_from_positions(&app).await;
+    // Measured time is independent of the estimate and of being signed in.
+    let _ = crate::kindle_app::tick(&app).await;
+    positions
+}
+
+async fn estimate_from_positions(app: &AppHandle) -> Result<KindleTick, String> {
     let db: State<Db> = app.state();
     if !kindle_estimates_on(&db) {
-        return Ok(0);
+        return Ok(KindleTick::default());
     }
-    let Some(creds) = creds::load()? else { return Ok(0) };
+    let Some(creds) = creds::load()? else { return Ok(KindleTick::default()) };
+    let days_read = crate::amazon_days::days_read(&db.0.lock().unwrap());
     let rows = db.list_library().map_err(|e| e.to_string())?;
     let mut books: Vec<_> = rows
         .into_iter()
@@ -248,7 +394,7 @@ pub async fn kindle_activity_tick(app: AppHandle) -> Result<i64, String> {
     books.truncate(KINDLE_BOOKS);
     let speed = reading_speed(&db);
     let now = Local::now();
-    let mut added = 0i64;
+    let (mut added, mut moved) = (0i64, false);
     for b in books {
         let book = client::Book {
             asin: b.asin.clone(),
@@ -257,41 +403,51 @@ pub async fn kindle_activity_tick(app: AppHandle) -> Result<i64, String> {
         };
         let Ok(st) = client::reading_state(&creds, &book).await else { continue };
         let Some(pos) = st.position else { continue };
-        let prev: Option<(i64, i64, bool)> = {
+        let prev: Option<(i64, i64, bool, Option<i64>)> = {
             let conn = db.0.lock().unwrap();
             conn.query_row(
-                "SELECT location, observed_at, rebase FROM kindle_obs WHERE asin = ?1",
+                "SELECT location, observed_at, rebase, since FROM kindle_obs WHERE asin = ?1",
                 [&b.asin],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .ok()
         };
-        if let Some((loc, at, rebase)) = prev {
+        if let Some((loc, at, rebase, since)) = prev {
             let delta = pos - loc;
+            moved |= !rebase && delta != 0;
             let total = b.text_length.unwrap_or(0).max(1);
             if !rebase && delta > 0 && (delta as f64) <= MAX_JUMP * total as f64 {
-                let elapsed_min = ((now.timestamp() - at).max(0) as f64) / 60.0;
+                // The reading took at most the time the old position stood still: a
+                // Kindle often syncs well after the reading, so not since the last look.
+                let elapsed_min = ((now.timestamp() - since.unwrap_or(at).min(at)).max(0) as f64) / 60.0;
                 let minutes = (delta as f64 / speed).min(elapsed_min).min(240.0);
                 let secs = (minutes * 60.0).round() as i64;
                 if secs >= 30 {
-                    let merged = now.timestamp() - at > 36 * 3600;
-                    // The hour is the hour of this check, not of the reading
-                    // (Amazon only tells us where the book got to).
-                    let (day, slot) = day_and_slot(Local::now());
-                    add_log(&db, day, &b.asin, "kindle", &slot, secs, delta, merged);
-                    added += secs / 60;
+                    let (today, slot) = day_and_slot(now);
+                    let prev_day = Local
+                        .timestamp_opt(at, 0)
+                        .single()
+                        .map_or(today, |t| reading_day(t.naive_local()));
+                    let found = Found { prev_day, today, slot, long_gap: now.timestamp() - at > 36 * 3600 };
+                    // Since the previous look, was a book open in this phone's Kindle app?
+                    let measured = crate::kindle_app::measured_secs(app, at * 1000, now.timestamp_millis()).await.unwrap_or(0);
+                    let left = estimate_left(secs, measured);
+                    if left < secs {
+                        // The phone read (this much of) it: no seconds here, the measured
+                        // time is the reading; this row names the book it goes to.
+                        add_log(&db, found.today, &b.asin, "kindle", PHONE_SLOT, 0, delta * (secs - left) / secs, false);
+                    }
+                    if left >= 30 {
+                        credit_estimate(&db, &b.asin, left, delta * left / secs, &found, &days_read);
+                        added += left / 60;
+                    }
                 }
             }
         }
         let conn = db.0.lock().unwrap();
-        let _ = conn.execute(
-            "INSERT INTO kindle_obs (asin, location, observed_at, rebase) VALUES (?1, ?2, ?3, 0)
-             ON CONFLICT(asin) DO UPDATE SET location = excluded.location,
-               observed_at = excluded.observed_at, rebase = 0",
-            rusqlite::params![b.asin, pos, now.timestamp()],
-        );
+        let _ = conn.execute(OBSERVE_SQL, rusqlite::params![b.asin, pos, now.timestamp()]);
     }
-    Ok(added)
+    Ok(KindleTick { minutes: added, moved })
 }
 
 // ---- Streaks ------------------------------------------------------------------
@@ -481,9 +637,28 @@ pub(crate) struct LogRow {
     pub merged: bool,
 }
 
-/// The whole reading log. Kindle estimates are left out when the user turned
-/// them off; manual (paper) reading always counts.
-pub(crate) fn read_log(conn: &Connection, use_kindle: bool) -> Result<Vec<LogRow>, String> {
+/// Which of the optional sources count (the user's settings).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Sources {
+    /// The Kindle estimate.
+    pub kindle: bool,
+    /// Time in the Kindle app on this phone.
+    pub kindle_app: bool,
+}
+
+impl Sources {
+    pub fn load(db: &Db) -> Self {
+        Sources { kindle: kindle_estimates_on(db), kindle_app: kindle_app_usage_on(db) }
+    }
+}
+
+/// The whole reading log. A source the user turned off is left out (the
+/// Kindle estimate, time in the Kindle app); manual (paper) reading always
+/// counts. The two Kindle sources do not overlap: a move read in this phone's
+/// Kindle app is not estimated (`estimate_left`), and its `PHONE_SLOT` row,
+/// which only names the book, is left out here, for every consumer
+/// (summary, periods, wraps, badges).
+pub(crate) fn read_log(conn: &Connection, on: Sources) -> Result<Vec<LogRow>, String> {
     let mut st = conn
         .prepare("SELECT day, asin, source, slot, seconds, merged FROM reading_log")
         .map_err(|e| e.to_string())?;
@@ -502,7 +677,7 @@ pub(crate) fn read_log(conn: &Connection, use_kindle: bool) -> Result<Vec<LogRow
     let mut log = vec![];
     for (day, asin, source, slot, seconds, merged) in it.flatten() {
         let Ok(day) = NaiveDate::parse_from_str(&day, "%Y-%m-%d") else { continue };
-        if source == "kindle" && !use_kindle {
+        if (source == "kindle" && (!on.kindle || slot == PHONE_SLOT)) || (source == crate::kindle_app::SOURCE && !on.kindle_app) {
             continue;
         }
         log.push(LogRow { day, asin, source, slot, seconds, merged });
@@ -515,8 +690,11 @@ pub(crate) fn read_log(conn: &Connection, use_kindle: bool) -> Result<Vec<LogRow
 pub(crate) struct DayAgg {
     /// Measured in the in-app reader.
     pub app: i64,
-    /// Estimated from Kindle progress.
+    /// Estimated from Kindle progress (reading on other devices: what this
+    /// phone's Kindle app measured is not estimated, see `estimate_left`).
     pub kindle: i64,
+    /// Measured: the Kindle app on this phone was on screen.
+    pub kindle_app: i64,
     /// Typed in by hand.
     pub manual: i64,
     /// Part of the Kindle estimate was spread over a long gap.
@@ -527,7 +705,7 @@ pub(crate) struct DayAgg {
 
 impl DayAgg {
     pub fn total(&self) -> i64 {
-        self.app + self.kindle + self.manual
+        self.app + self.kindle + self.kindle_app + self.manual
     }
 }
 
@@ -537,6 +715,7 @@ pub(crate) fn per_day(log: &[LogRow]) -> BTreeMap<NaiveDate, DayAgg> {
         let e = days.entry(r.day).or_default();
         match r.source.as_str() {
             "kindle" => e.kindle += r.seconds,
+            crate::kindle_app::SOURCE => e.kindle_app += r.seconds,
             "manual" => e.manual += r.seconds,
             _ => e.app += r.seconds,
         }
@@ -630,7 +809,8 @@ pub(crate) fn paper_titles(conn: &Connection) -> HashMap<String, String> {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DayStat {
     pub day: String,
-    /// Measured reading: in-app plus paper books typed in by hand.
+    /// Measured reading: in-app, paper books typed in by hand and time in the
+    /// Kindle app on this phone.
     pub app_sec: i64,
     pub kindle_sec: i64,
     pub merged: bool,
@@ -654,9 +834,12 @@ pub struct Summary {
     pub today: String,
     pub goal_minutes: i64,
     pub kindle_estimates: bool,
+    /// Measured today (see `DayStat::app_sec`).
     pub today_app_sec: i64,
     pub today_kindle_sec: i64,
     pub streak: Streak,
+    /// The days Amazon says were read, and how fresh that is.
+    pub amazon_days: crate::amazon_days::AmazonDays,
     /// Days with any reading in the last year (oldest first).
     pub days: Vec<DayStat>,
     pub total_seconds: i64,
@@ -680,13 +863,15 @@ pub struct Summary {
 fn gather(db: &Db) -> Result<(Facts, Summary), String> {
     let today = today();
     let goal = goal_minutes(db);
-    let use_kindle = kindle_estimates_on(db);
+    let sources = Sources::load(db);
+    let use_kindle = sources.kindle;
     let rows = db.list_library().map_err(|e| e.to_string())?;
     let titles: HashMap<String, String> = rows.iter().map(|r| (r.asin.clone(), r.title.clone())).collect();
 
+    // The settings are read before the connection is taken (it is not re-entrant).
     let conn = db.0.lock().unwrap();
     sync_book_events(&conn, &rows, today);
-    let log = read_log(&conn, use_kindle)?;
+    let log = read_log(&conn, sources)?;
 
     let mut f = Facts { today, ..Default::default() };
     let per_day = per_day(&log);
@@ -698,7 +883,13 @@ fn gather(db: &Db) -> Result<(Facts, Summary), String> {
         f.total_seconds += r.seconds;
     }
     for (d, agg) in &per_day {
-        let top = agg.books.iter().max_by_key(|(_, s)| **s).map(|(a, _)| a.clone());
+        // The pseudo book of Kindle-app time is no book to be "the book of the day".
+        let top = agg
+            .books
+            .iter()
+            .filter(|(a, _)| a.as_str() != crate::kindle_app::PSEUDO_ASIN)
+            .max_by_key(|(_, s)| **s)
+            .map(|(a, _)| a.clone());
         f.days.insert(*d, (agg.total(), top));
     }
     f.met = met_days(&per_day, goal);
@@ -738,9 +929,9 @@ fn gather(db: &Db) -> Result<(Facts, Summary), String> {
     let days: Vec<DayStat> = per_day
         .iter()
         .filter(|(d, _)| **d >= from)
-        .map(|(d, a)| DayStat { day: d.to_string(), app_sec: a.app + a.manual, kindle_sec: a.kindle, merged: a.merged })
+        .map(|(d, a)| DayStat { day: d.to_string(), app_sec: a.app + a.manual + a.kindle_app, kindle_sec: a.kindle, merged: a.merged })
         .collect();
-    let (t_app, t_kin) = per_day.get(&today).map(|a| (a.app + a.manual, a.kindle)).unwrap_or((0, 0));
+    let (t_app, t_kin) = per_day.get(&today).map(|a| (a.app + a.manual + a.kindle_app, a.kindle)).unwrap_or((0, 0));
     let mut top: Vec<BookTime> = per_book
         .into_iter()
         // Only books still in the library (removed ones have no title).
@@ -756,6 +947,7 @@ fn gather(db: &Db) -> Result<(Facts, Summary), String> {
         kindle_estimates: use_kindle,
         today_app_sec: t_app,
         today_kindle_sec: t_kin,
+        amazon_days: crate::amazon_days::status(db),
         streak: compute_streak(&f.met, today),
         days,
         total_seconds: f.total_seconds,
@@ -822,7 +1014,11 @@ pub fn set_stats_settings(
     goal_minutes: Option<i64>,
     kindle_estimates: Option<bool>,
     goal_books_year: Option<i64>,
+    kindle_app_usage: Option<bool>,
 ) -> Result<(), String> {
+    if let Some(k) = kindle_app_usage {
+        set_setting(&db, "kindle_app_usage", if k { "1" } else { "0" })?;
+    }
     if let Some(g) = goal_minutes {
         set_setting(&db, "goal_minutes", &g.clamp(5, 120).to_string())?;
     }
@@ -1215,7 +1411,7 @@ mod tests {
         t.log("2026-11-18", "K", "kindle", "h10", 900);
         let conn = db.0.lock().unwrap();
         for (kindle, expected_total) in [(true, 12 * 60 + 900), (false, 12 * 60)] {
-            let day = per_day(&read_log(&conn, kindle).unwrap());
+            let day = per_day(&read_log(&conn, Sources { kindle, kindle_app: true }).unwrap());
             let agg = &day[&today];
             assert_eq!((agg.total(), agg.manual), (expected_total, 12 * 60), "kindle {kindle}");
             assert!(met_days(&day, 10).contains(&today));
@@ -1251,6 +1447,154 @@ mod tests {
         delete_manual(db, d("2026-11-18"), "paper:paper").unwrap();
         assert!(paper_titles(&db.0.lock().unwrap()).is_empty());
         delete_manual(db, d("2026-11-18"), "paper:paper").unwrap(); // nothing left is fine
+    }
+
+    #[test]
+    fn a_position_remembers_since_when_it_stood_still() {
+        let t = TempDb::new("kindle-obs");
+        let db = t.db();
+        let look = |loc: i64, at: i64| {
+            db.0.lock().unwrap().execute(OBSERVE_SQL, rusqlite::params!["A", loc, at]).unwrap();
+        };
+        let row = || -> (i64, i64, Option<i64>) {
+            db.0.lock()
+                .unwrap()
+                .query_row("SELECT location, observed_at, since FROM kindle_obs WHERE asin = 'A'", [], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })
+                .unwrap()
+        };
+        look(100, 1000);
+        look(100, 2000); // unchanged: still there since the first look
+        assert_eq!(row(), (100, 2000, Some(1000)));
+        look(500, 3000); // moved
+        assert_eq!(row(), (500, 3000, Some(3000)));
+        // A row from before `since` existed counts from its last look.
+        db.0.lock().unwrap().execute_batch("UPDATE kindle_obs SET since = NULL, observed_at = 3500").unwrap();
+        look(500, 4000);
+        assert_eq!(row(), (500, 4000, Some(3500)));
+        // The app pushed its own position: that is where Kindle reading elsewhere starts from...
+        note_own_position(db, "A", 900);
+        let (loc, pushed_at, since) = row();
+        assert_eq!((loc, Some(pushed_at)), (900, since));
+        // ...and a look that began before the push does not undo it.
+        look(500, pushed_at - 1);
+        assert_eq!(row().0, 900);
+    }
+
+    #[test]
+    fn the_phone_explains_a_move_up_to_twice_its_time() {
+        // Nothing measured: the whole estimate.
+        assert_eq!(estimate_left(600, 0), 600);
+        // 159 s estimated, 89 s measured (the speed is only a guess): all read on the phone.
+        assert_eq!(estimate_left(159, 89), 0);
+        assert_eq!(estimate_left(180, 90), 0);
+        // Far more moved than the phone read: the rest was read elsewhere.
+        assert_eq!(estimate_left(1800, 300), 1500);
+    }
+
+    #[test]
+    fn kindle_app_time_and_estimates_add_up_and_phone_rows_only_name_books() {
+        let t = TempDb::new("kindle-sources");
+        let db = t.db();
+        t.add_book("A", "A");
+        t.add_book("B", "B");
+        // 18th: A read on the phone (measured, plus the row naming it), B on another Kindle (estimated).
+        t.log("2026-11-18", "A", "kindle_app", "h09", 1800);
+        t.log("2026-11-18", "A", "kindle", PHONE_SLOT, 0);
+        t.log("2026-11-18", "B", "kindle", "h10", 600);
+        // 21st: measured only, and in-app reading.
+        t.log("2026-11-21", "A", "kindle_app", "h22", 500);
+        t.log("2026-11-21", "A", "app", "h22", 100);
+
+        let conn = db.0.lock().unwrap();
+        let log = read_log(&conn, Sources { kindle: true, kindle_app: true }).unwrap();
+        assert!(log.iter().all(|r| r.slot != PHONE_SLOT));
+        let day = |on: Sources| per_day(&read_log(&conn, on).unwrap());
+        let both = day(Sources { kindle: true, kindle_app: true });
+        let (a18, a21) = (&both[&d("2026-11-18")], &both[&d("2026-11-21")]);
+        assert_eq!((a18.kindle, a18.kindle_app, a18.total()), (600, 1800, 2400));
+        assert_eq!((a18.books["A"], a18.books["B"]), (1800, 600));
+        assert_eq!((a21.kindle, a21.kindle_app, a21.app), (0, 500, 100));
+        // Each toggle leaves out only its own source.
+        let est = day(Sources { kindle: true, kindle_app: false });
+        assert_eq!((est[&d("2026-11-18")].kindle, est[&d("2026-11-18")].kindle_app), (600, 0));
+        let app_only = day(Sources { kindle: false, kindle_app: true });
+        assert_eq!((app_only[&d("2026-11-18")].kindle, app_only[&d("2026-11-18")].kindle_app), (0, 1800));
+        drop(conn);
+
+        let (f, s) = gather(db).unwrap();
+        assert_eq!(s.total_seconds, 2400 + 600);
+        assert_eq!(f.total_seconds, s.total_seconds);
+    }
+
+    #[test]
+    fn kindle_app_hours_count_as_night_and_early_reading() {
+        let t = TempDb::new("kindle-app-hours");
+        t.log("2026-11-01", "kindle:app", "kindle_app", "h01", 600);
+        t.log("2026-11-02", "kindle:app", "kindle_app", "h05", 700);
+        let (f, s) = gather(t.db()).unwrap();
+        assert_eq!((f.night_days, f.early_days), (1, 1));
+        // The pseudo book is counted in the totals but is never listed.
+        assert_eq!(s.total_seconds, 1300);
+        assert!(s.top_books.is_empty());
+    }
+
+    #[test]
+    fn estimates_are_split_over_the_days_amazon_says_were_read() {
+        let read: BTreeSet<NaiveDate> = ["2026-11-10", "2026-11-12", "2026-11-14", "2026-11-16"].iter().map(|s| d(s)).collect();
+        let split = |secs, prev: &str, today: &str| split_over_days(secs, d(prev), d(today), &read);
+        // Same day, or no gap: everything stays on today.
+        assert_eq!(split(600, "2026-11-16", "2026-11-16"), [(d("2026-11-16"), 600)]);
+        // A gap of one day: only today is in (prev, today]; it is read, so it gets all.
+        assert_eq!(split(600, "2026-11-15", "2026-11-16"), [(d("2026-11-16"), 600)]);
+        // Several days, some read: equal shares over the read ones (the 11th and 13th were not read).
+        assert_eq!(split(900, "2026-11-10", "2026-11-16"), [(d("2026-11-12"), 300), (d("2026-11-14"), 300), (d("2026-11-16"), 300)]);
+        // The previous look's own day is not part of the gap.
+        assert_eq!(split(100, "2026-11-12", "2026-11-14"), [(d("2026-11-14"), 100)]);
+        // None of the days is known to be read: today, as before.
+        assert_eq!(split(600, "2026-11-16", "2026-11-19"), [(d("2026-11-19"), 600)]);
+        assert_eq!(split(600, "2026-11-01", "2026-11-09"), [(d("2026-11-09"), 600)]);
+        // The total is exact: the odd seconds go to the earliest days.
+        let shares = split(1000, "2026-11-09", "2026-11-16");
+        assert_eq!(shares.iter().map(|s| s.1).collect::<Vec<_>>(), [250, 250, 250, 250]);
+        let shares = split(1001, "2026-11-09", "2026-11-16");
+        assert_eq!(shares.iter().map(|s| s.1).collect::<Vec<_>>(), [251, 250, 250, 250]);
+        let shares = split(2, "2026-11-09", "2026-11-16");
+        assert_eq!(shares, [(d("2026-11-10"), 1), (d("2026-11-12"), 1)]);
+    }
+
+    #[test]
+    fn a_long_gap_credits_the_read_days_without_an_hour() {
+        let t = TempDb::new("credit-gap");
+        let db = t.db();
+        let read: BTreeSet<NaiveDate> = ["2026-11-11", "2026-11-13"].iter().map(|s| d(s)).collect();
+        let found = |prev: &str, today: &str, long_gap| Found { prev_day: d(prev), today: d(today), slot: "h21".into(), long_gap };
+        // Spread over two read days: rows without an hour, flagged as merged.
+        credit_estimate(db, "A", 1001, 2002, &found("2026-11-10", "2026-11-14", true), &read);
+        // No read day in the gap: all on today, in the hour of the look, merged only for a gap over 36 h.
+        credit_estimate(db, "B", 600, 10, &found("2026-11-17", "2026-11-20", true), &read);
+        credit_estimate(db, "C", 300, 5, &found("2026-11-20", "2026-11-20", false), &read);
+        let conn = db.0.lock().unwrap();
+        let rows: Vec<(String, String, String, i64, i64, bool)> = conn
+            .prepare("SELECT day, asin, slot, seconds, positions, merged FROM reading_log ORDER BY day, asin")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let row = |a: &str, b: &str, c: &str, s, p, m| (a.to_string(), b.to_string(), c.to_string(), s, p, m);
+        assert_eq!(
+            rows,
+            [
+                row("2026-11-11", "A", "kindle_est", 501, 1002, true),
+                row("2026-11-13", "A", "kindle_est", 500, 1000, true),
+                row("2026-11-20", "B", "h21", 600, 10, true),
+                row("2026-11-20", "C", "h21", 300, 5, false),
+            ]
+        );
+        assert_eq!(slot_class("kindle_est"), SlotClass::Manual);
+        assert_eq!(slot_hour("kindle_est"), None);
     }
 
     #[test]

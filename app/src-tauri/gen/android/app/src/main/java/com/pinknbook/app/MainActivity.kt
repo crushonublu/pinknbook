@@ -1,18 +1,39 @@
 package com.pinknbook.app
 
+import android.app.AppOpsManager
+import android.app.usage.UsageEvents
+import android.app.usage.UsageStatsManager
 import android.content.ClipData
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Build
+import android.os.Process
 import android.graphics.Rect
 import android.provider.MediaStore
+import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.IOException
+
+private const val KINDLE_PACKAGE = "com.amazon.kindle"
+
+/**
+ * The Kindle app's screens that show a book (or a periodical, article, manga) and the in-book tools
+ * (contents, notes, dictionary, search): time on these counts, time in the library or the store does not.
+ * Activity names from the manifests of Kindle 8.160 and 14.146 (StandAloneBookReaderActivity, BookReaderActivity…).
+ */
+private fun isKindleReadingScreen(cls: String): Boolean =
+  cls.startsWith("com.amazon.kcp.reader.") ||
+    cls.startsWith("com.amazon.kindle.mangaviewer.") ||
+    cls.startsWith("com.amazon.article.reader.") ||
+    cls.endsWith("ReaderActivity") ||
+    cls.endsWith("ReaderSearchActivity")
 
 class MainActivity : TauriActivity() {
   private var mainWebView: WebView? = null
@@ -40,6 +61,95 @@ class MainActivity : TauriActivity() {
       android.webkit.CookieManager.getInstance().removeAllCookies {
         android.webkit.CookieManager.getInstance().flush()
       }
+    }
+  }
+
+  // Native-only entry point for the Amazon days (src-tauri/src/amazon_days.rs): the cookies of the
+  // sign-in web view for www.amazon.com, as a Cookie header. Never logged or stored.
+  @androidx.annotation.Keep
+  fun amazonCookieHeader(): String =
+    android.webkit.CookieManager.getInstance().getCookie("https://www.amazon.com") ?: ""
+
+  // Native-only entry points for the time the Kindle app was on screen (src-tauri/src/kindle_app.rs).
+
+  /** Has the user granted "Usage access" to this app? */
+  @androidx.annotation.Keep
+  fun hasUsageAccess(): Boolean {
+    val ops = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+    val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
+    } else {
+      @Suppress("DEPRECATION")
+      ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), packageName)
+    }
+    return mode == AppOpsManager.MODE_ALLOWED
+  }
+
+  /** Opens the system's Usage access screen, on this app's entry when the phone can show it. */
+  @androidx.annotation.Keep
+  fun openUsageAccessSettings() {
+    try {
+      startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:$packageName")))
+    } catch (e: Exception) {
+      startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+    }
+  }
+
+  /**
+   * When a book was open in the Kindle app between [fromMs] and [toMs] (epoch milliseconds): a JSON
+   * array `[[startMs,endMs],...]`, or "!" and the reason ("!no_access" without Usage access). Only the
+   * reading screens count ([isKindleReadingScreen]); they are one session from being resumed until all
+   * of them are stopped (Android 10+; paused before), so a dictionary or a tip shown over the page keeps
+   * the session going. A session still open at [toMs] ends there; one that began before [fromMs] starts there.
+   */
+  @androidx.annotation.Keep
+  fun kindleForegroundSessions(fromMs: Long, toMs: Long): String {
+    if (!hasUsageAccess()) return "!no_access"
+    return try {
+      val usage = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return "!no_service"
+      val events = usage.queryEvents(fromMs, toMs)
+      val event = UsageEvents.Event()
+      val sessions = org.json.JSONArray()
+      val resumed = HashSet<String>()
+      var startedAt = -1L
+      // Only a pause before any other Kindle event can belong to a session that began before the window;
+      // a stray pause after a closed session is ignored.
+      var seenKindle = false
+      while (events.hasNextEvent()) {
+        events.getNextEvent(event)
+        if (event.packageName != KINDLE_PACKAGE) continue
+        val screen = event.className ?: ""
+        if (!isKindleReadingScreen(screen)) continue
+        val type = event.eventType
+        // The legacy names (API 21) have the same values as ACTIVITY_RESUMED / ACTIVITY_PAUSED (API 29).
+        @Suppress("DEPRECATION")
+        val isResume = type == UsageEvents.Event.ACTIVITY_RESUMED || type == UsageEvents.Event.MOVE_TO_FOREGROUND
+        // A screen still visible under a dialog is paused but not stopped; ACTIVITY_STOPPED exists from Android 10.
+        @Suppress("DEPRECATION")
+        val isPause = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) type == UsageEvents.Event.ACTIVITY_STOPPED
+          else type == UsageEvents.Event.MOVE_TO_BACKGROUND
+        if (isResume) {
+          if (resumed.isEmpty()) startedAt = event.timeStamp
+          resumed.add(screen)
+          seenKindle = true
+        } else if (isPause) {
+          if (startedAt < 0) {
+            if (seenKindle) continue
+            // Paused without being resumed in this window: the session began before it.
+            startedAt = fromMs; resumed.add(screen)
+          }
+          seenKindle = true
+          resumed.remove(screen)
+          if (resumed.isEmpty()) {
+            if (event.timeStamp > startedAt) sessions.put(org.json.JSONArray().put(startedAt).put(event.timeStamp))
+            startedAt = -1L
+          }
+        }
+      }
+      if (startedAt >= 0 && toMs > startedAt) sessions.put(org.json.JSONArray().put(startedAt).put(toMs))
+      sessions.toString()
+    } catch (e: Exception) {
+      "!" + (e.message ?: e.javaClass.simpleName)
     }
   }
 

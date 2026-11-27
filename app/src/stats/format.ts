@@ -2,6 +2,10 @@
 // and filling `{0}` placeholders of the i18n strings.
 
 import { STR, type Lang } from "../i18n";
+import type { PeriodDay } from "./types";
+
+/** Seconds read on a day, from every source. */
+export const daySeconds = (d: PeriodDay) => d.app_sec + d.kindle_sec + d.kindle_app_sec + d.manual_sec;
 
 /** Replace `{0}`, `{1}`... in an i18n string. */
 export function fmt(template: string, ...values: (string | number)[]): string {

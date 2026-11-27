@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 /** Save stats settings (any of them), then let the page reload its numbers. */
 export async function saveStatsSettings(
-  p: { goalMinutes?: number; goalBooksYear?: number; kindleEstimates?: boolean },
+  p: { goalMinutes?: number; goalBooksYear?: number; kindleEstimates?: boolean; kindleAppUsage?: boolean },
   onChanged: () => void,
 ) {
   await invoke("set_stats_settings", p).catch(() => undefined);

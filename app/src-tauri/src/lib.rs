@@ -1,5 +1,8 @@
 mod adp;
 mod ai;
+mod amazon_days;
+#[cfg(target_os = "android")]
+mod android;
 mod annotations;
 mod bookmarks;
 mod commands;
@@ -8,6 +11,7 @@ mod db;
 mod dict;
 mod genre;
 mod goodreads;
+mod kindle_app;
 mod library_meta;
 mod local;
 mod local_io;
@@ -112,6 +116,9 @@ pub fn run() {
             stk::stk_send,
             stats::log_reading,
             stats::kindle_activity_tick,
+            kindle_app::kindle_usage_status,
+            kindle_app::kindle_usage_open_settings,
+            amazon_days::amazon_days_refresh,
             stats::stats_summary,
             stats::set_stats_settings,
             stats::log_manual_reading,

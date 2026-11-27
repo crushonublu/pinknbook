@@ -9,6 +9,8 @@
 //                       [&slow=1]        (stats answer after 8 s: the loading states)
 //                       [&open=manual]   (desktop: open the paper-reading popover)
 //                       [&exportfail=<message>]   (saving a picture fails with that raw message)
+//                       [&usage=granted]          (mobile: Usage access to the Kindle app is already given)
+//                       [&amazon=ok|needs_signin|error|none]   (state of the days read from Amazon)
 //   /stats-preview.html?view=book &platform=mobile|desktop [&asin=PV0025] [&theme=...] [&lang=...]
 //                       (a book's page, with its genre picker; PV0025 has no genre)
 //   /stats-preview.html?view=wrap &kind=week|month|year &format=story|post
@@ -42,7 +44,7 @@ import type { Format } from "../wrap/geometry";
 import { StatsPage, StreakButton, useStats } from "../Stats";
 import BookDetail from "../BookDetail";
 import MobileBookSheet from "../mobile/MobileBookSheet";
-import { GENRES, bookGenre, deleteManual, deleteWrap, libraryRows, logManual, manualOn, periodStats, setBookGenre, settings, summary, wrapDoc, wrapSummaries, dayMarks } from "./statsFixture";
+import { GENRES, amazonDays, bookGenre, deleteManual, deleteWrap, libraryRows, logManual, manualOn, periodStats, setBookGenre, settings, summary, wrapDoc, wrapSummaries, dayMarks } from "./statsFixture";
 
 const q = new URLSearchParams(location.search);
 const wrapView = q.get("view") === "wrap";
@@ -80,8 +82,17 @@ mockIPC((cmd, payload) => {
     case "stats_summary":
       return later(summary);
     case "kindle_activity_tick":
+      return { minutes: 0, moved: false };
     case "genre_fill":
       return 0;
+    // Android's Usage access: the phone view starts without it (`usage=granted` with it); opening the settings grants it.
+    case "kindle_usage_status":
+      return { supported: view === "mobile", granted: settings.usageGranted, enabled: settings.kindleApp };
+    case "kindle_usage_open_settings":
+      settings.usageGranted = true;
+      return null;
+    case "amazon_days_refresh":
+      return amazonDays();
     case "stats_period":
       return later(() => periodStats(a.kind as PeriodKind, (a.anchor as string | null) ?? null));
     case "stats_day":
@@ -114,6 +125,7 @@ mockIPC((cmd, payload) => {
       if (typeof a.goalMinutes === "number") settings.goalMinutes = a.goalMinutes;
       if (typeof a.goalBooksYear === "number") settings.goalBooksYear = a.goalBooksYear;
       if (typeof a.kindleEstimates === "boolean") settings.kindleEstimates = a.kindleEstimates;
+      if (typeof a.kindleAppUsage === "boolean") settings.kindleApp = a.kindleAppUsage;
       return null;
     case "wraps_pending":
       return wrapSummaries().filter((w) => !w.seen && !seenWraps.has(`${w.kind}:${w.period_start}`));

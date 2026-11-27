@@ -7,6 +7,10 @@
   --st-kindle: color-mix(in srgb, var(--accent) 45%, var(--surface-2));
   --st-read: color-mix(in srgb, var(--accent) 26%, var(--surface-2));
   --st-manual: #d9a441;
+  /* The Kindle app on this phone (measured), told apart from the Kindle estimate. */
+  --st-kindleapp: #4fb3a9;
+  /* A day Amazon says was read on a Kindle, with no minutes: lighter than a day with minutes. */
+  --st-amazon: color-mix(in srgb, var(--accent) 11%, var(--surface-2));
   --st-dim: color-mix(in srgb, var(--muted) 55%, var(--surface-2));
   /* Text on an accent-filled day: dark enough (>= 4.5:1) on both accents. */
   --st-on-accent: #1f0710;
@@ -25,6 +29,7 @@
 }
 :root[data-theme="light"] {
   --st-manual: #b9791a;
+  --st-kindleapp: #2a8f86;
   --st-up: #17805a;
   --st-down: #a85a0a;
   --st-g2: #f3a9bf;
@@ -170,6 +175,7 @@
 .scx-cal__cell { position: relative; display: block; height: 54px; padding: 0; border: 0; border-radius: 12px; box-sizing: border-box; overflow: hidden; background: var(--surface-2); color: var(--muted); font: inherit; }
 .scx-cal__cell.is-streak { background: var(--accent); color: var(--st-on-accent); }
 .scx-cal__cell.is-read { background: var(--st-read); color: var(--text); }
+.scx-cal__cell.is-amazon { background: var(--st-amazon); color: var(--text); }
 .scx-cal__cell.is-future { background: transparent; border: 1px dashed var(--border); }
 .scx-cal__cell.is-other { background: transparent; color: color-mix(in srgb, var(--muted) 45%, transparent); }
 .scx-cal__cell.is-today { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--text); }
@@ -185,6 +191,7 @@
 .scx-cal__legend i { width: 12px; height: 12px; border-radius: 4px; box-sizing: border-box; }
 .scx-cal__legend i.is-streak { background: var(--accent); }
 .scx-cal__legend i.is-read { background: var(--st-read); }
+.scx-cal__legend i.is-amazon { background: var(--st-amazon); border: 1px solid var(--border); }
 .scx-cal__legend i.is-none { background: var(--surface-2); border: 1px solid var(--border); }
 .scx-cal__foot { display: flex; justify-content: space-between; gap: 12px; padding: 12px 4px 0; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
 .scx-cal__foot b { color: var(--text); font-weight: 600; }
@@ -200,6 +207,7 @@
 .scx-bars__col.is-today span { color: var(--accent); font-weight: 700; }
 .scx-bars i.is-app, .scx-legend i.is-app, .scx-day i.is-app { background: var(--accent); }
 .scx-bars i.is-kindle, .scx-legend i.is-kindle, .scx-day i.is-kindle { background: var(--st-kindle); }
+.scx-bars i.is-kindleapp, .scx-legend i.is-kindleapp, .scx-day i.is-kindleapp { background: var(--st-kindleapp); }
 .scx-bars i.is-manual, .scx-legend i.is-manual, .scx-day i.is-manual { background: var(--st-manual); }
 .scx-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--st-label); }
 .scx-legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -261,8 +269,28 @@
 .scx-settings { padding-bottom: 12px; }
 .scx-settings__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; border-bottom: 1px solid var(--border); font-size: 15px; }
 .scx-settings__row:last-child { border-bottom: 0; }
-.scx-settings__row small { display: block; font-size: 12px; color: var(--muted); }
+.scx-settings__row { padding-block: 8px; }
+.scx-settings__row small { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
 .scx-settings__row input { flex: none; width: 22px; height: 22px; accent-color: var(--accent); }
+.scx-source__actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.scx-source__refresh { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: none; color: var(--text); cursor: pointer; }
+.scx-source__refresh:disabled { opacity: .5; cursor: default; }
+.scx-source__refresh:disabled svg { animation: scx-spin 1s linear infinite; }
+@keyframes scx-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .scx-source__refresh:disabled svg { animation: none; } }
+
+/* On/off switch (Switch.tsx); the label around it toggles it too. */
+.scx-switch { position: relative; display: inline-flex; flex: none; }
+.scx-switch .scx-switch__input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.scx-switch__track { position: relative; width: 42px; height: 24px; border-radius: 999px; background: color-mix(in srgb, var(--muted) 45%, transparent); transition: background .15s; }
+.scx-switch__track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .15s; }
+.scx-switch__input:checked + .scx-switch__track { background: var(--accent); }
+.scx-switch__input:checked + .scx-switch__track::after { transform: translateX(18px); }
+.scx-switch__input:focus-visible + .scx-switch__track { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .scx-switch__track, .scx-switch__track::after { transition: none; } }
+.scx-settings__row--toggle, .scx-toggle { cursor: pointer; }
+.stx-source { padding-top: 4px; padding-bottom: 4px; }
+.stx-source .scx-settings__row { border-bottom: 0; }
 .scx-how { margin: 0; padding-bottom: 12px; font-size: 15px; line-height: 1.55; }
 .scx-day { display: flex; flex-direction: column; gap: 18px; padding-bottom: 20px; }
 .scx-day__streak { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #fbd3e0; }

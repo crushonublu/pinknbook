@@ -45,12 +45,14 @@ export function DayContent({ lang, s, day, data, books, rows, onChanged, classNa
   }, [day]);
 
   const app = data?.app_sec ?? 0;
+  const kindleApp = data?.kindle_app_sec ?? 0;
   const kindle = data?.kindle_sec ?? 0;
   const manual = data?.manual_sec ?? 0;
-  const total = app + kindle + manual;
+  const total = app + kindleApp + kindle + manual;
   const n = streakDayNumber(s, day);
   const parts = [
     { key: "app", sec: app, label: t.sxInApp },
+    { key: "kindleapp", sec: kindleApp, label: t.sxKindleApp },
     { key: "kindle", sec: kindle, label: t.sxKindleEst },
     { key: "manual", sec: manual, label: t.sxManual },
   ].filter((p) => p.sec > 0);
@@ -66,13 +68,15 @@ export function DayContent({ lang, s, day, data, books, rows, onChanged, classNa
             <span className="scx-day__min"><span className="scx__acc">{minutesOf(total)}</span> {unitOf(t.minutesN)}</span>
             {data?.met && <span className="scx-day__met"><Icon name="check" size={12} />{fmt(t.sxGoalMet, s.goal_minutes)}</span>}
           </div>
-          <div className="scx-day__split" role="img" aria-label={fmt(t.sxSplitAria, Math.round(app / 60), Math.round(kindle / 60), Math.round(manual / 60))}>
+          <div className="scx-day__split" role="img" aria-label={fmt(t.sxSplitAria, Math.round(app / 60), Math.round(kindleApp / 60), Math.round(kindle / 60), Math.round(manual / 60))}>
             {parts.map((p) => <i key={p.key} className={`is-${p.key}`} style={{ flexGrow: p.sec }} />)}
           </div>
           <div className="scx-day__legend">
             {parts.map((p) => <span key={p.key}><i className={`is-${p.key}`} />{p.label} · {Math.round(p.sec / 60)}′</span>)}
           </div>
         </div>
+      ) : data?.amazon_read ? (
+        <p className="scx__sub">{t.sxLegendAmazon}</p>
       ) : (
         !hasMarks && <p className="scx__sub">{t.sxNoReadingDay}</p>
       )}

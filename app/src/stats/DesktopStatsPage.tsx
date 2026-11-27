@@ -9,6 +9,7 @@ import { fmt, longDate } from "./format";
 import { GenreDonut } from "./GenreDonut";
 import { GoalCard } from "./GoalCard";
 import { HoursCard } from "./HoursCard";
+import { AmazonDaysRow } from "./KindleSources";
 import { ProfileCard } from "./ProfileCard";
 import { ReadingTimeCard } from "./ReadingTimeCard";
 import { DAILY_GOALS, saveStatsSettings, yearlyGoals } from "./settings";
@@ -21,6 +22,7 @@ import { isNewReader } from "./streak";
 import { useStatsPage } from "./useStatsPage";
 import { WrapList } from "../wrap/WrapOffers";
 import { currentMonthWrap } from "../wrap/wording";
+import { Switch } from "./Switch";
 import type { LibraryRow } from "../types";
 import type { StatsSummary, WrapsAccess } from "./types";
 import "./stats.css";
@@ -95,7 +97,7 @@ export function DesktopStatsPage({ lang, s, loadFailed = false, rows, onBack, on
             </select>
           </label>
           <label className="stx-field stx-field--check" title={t.kindleEstHint}>
-            <input type="checkbox" checked={s.kindle_estimates} onChange={(e) => saveStatsSettings({ kindleEstimates: e.target.checked }, onChanged)} />
+            <Switch on={s.kindle_estimates} onChange={(on) => saveStatsSettings({ kindleEstimates: on }, onChanged)} />
             <span>{t.kindleEst}</span>
           </label>
         </>
@@ -162,6 +164,11 @@ export function DesktopStatsPage({ lang, s, loadFailed = false, rows, onBack, on
 
             <BadgesCard lang={lang} s={s} grid />
             {wraps && <WrapList lang={lang} wraps={wraps.list} onOpen={wraps.onOpen} onDelete={wraps.onDelete} />}
+            {s.amazon_days.status !== "none" && (
+              <section className="scx stx-source">
+                <AmazonDaysRow lang={lang} days={s.amazon_days} onChanged={onChanged} />
+              </section>
+            )}
           </>
         )}
       </div>

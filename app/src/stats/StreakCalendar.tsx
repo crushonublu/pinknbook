@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { STR, type Lang } from "../i18n";
 import { Icon } from "../icons";
 import { RefCover } from "./BookCover";
-import { dayKey, fmt, fmtDuration, minutesOf, monthTitle, names, parseDay } from "./format";
+import { dayKey, daySeconds, fmt, fmtDuration, minutesOf, monthTitle, names, parseDay } from "./format";
 import type { PeriodDay, PeriodStats, StatsSummary } from "./types";
 
 /** Day cells of the grid: always whole Monday-first weeks. */
@@ -17,7 +17,9 @@ function monthCells(year: number, month: number) {
   });
 }
 
-const total = (d: PeriodDay) => d.app_sec + d.kindle_sec + d.manual_sec;
+const total = daySeconds;
+/** A day with minutes, or that Amazon says was read on a Kindle. */
+const isRead = (d: PeriodDay) => total(d) > 0 || d.amazon_read;
 
 /** "12/8 – 14/9", with the year when it is not this one. */
 function rangeText(start: string, end: string, thisYear: number) {
@@ -57,7 +59,7 @@ export function StreakCalendar({ lang, s, period, year, onDay, onHow, onMonthCha
   // Months of the year with any reading.
   const readMonths = useMemo(() => {
     const has = new Set<number>();
-    for (const d of period.days) if (total(d) > 0 && d.day.startsWith(`${year}-`)) has.add(Number(d.day.slice(5, 7)) - 1);
+    for (const d of period.days) if (isRead(d) && d.day.startsWith(`${year}-`)) has.add(Number(d.day.slice(5, 7)) - 1);
     return has;
   }, [period, year]);
   // The last month that can be looked at: this one while the year runs.
@@ -86,7 +88,7 @@ export function StreakCalendar({ lang, s, period, year, onDay, onHow, onMonthCha
 
   const cells = monthCells(year, month);
   const inStreak = (d: PeriodDay) => d.met && !!s.streak.current_start && d.day >= s.streak.current_start && d.day <= s.today;
-  const monthDays = cells.filter((c) => c.inMonth).map((c) => byDay.get(c.key)).filter((d): d is PeriodDay => !!d && total(d) > 0);
+  const monthDays = cells.filter((c) => c.inMonth).map((c) => byDay.get(c.key)).filter((d): d is PeriodDay => !!d && isRead(d));
   const monthSec = monthDays.reduce((n, d) => n + total(d), 0);
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const monthNames = names(t.sxMonthNames);
@@ -129,6 +131,7 @@ export function StreakCalendar({ lang, s, period, year, onDay, onHow, onMonthCha
     <div className="scx-cal__legend">
       <span><i className="is-streak" />{t.sxLegendStreak}</span>
       <span><i className="is-read" />{t.sxLegendRead}</span>
+      {period.days.some((d) => d.amazon_read && total(d) === 0) && <span><i className="is-amazon" />{t.sxLegendAmazon}</span>}
       <span><i className="is-none" />{t.sxLegendNone}</span>
     </div>
   );
@@ -169,8 +172,9 @@ export function StreakCalendar({ lang, s, period, year, onDay, onHow, onMonthCha
           const future = c.key > s.today;
           const today = c.key === s.today;
           const sec = d ? total(d) : 0;
-          const state = d && inStreak(d) ? "streak" : sec > 0 ? "read" : "none";
-          const label = `${c.n}/${month + 1}: ${sec > 0 ? fmt(t.minutesN, minutesOf(sec)) : t.sxNoReadingShort}`;
+          const amazonOnly = sec === 0 && !!d?.amazon_read;
+          const state = d && inStreak(d) ? "streak" : sec > 0 ? "read" : amazonOnly ? "amazon" : "none";
+          const label = `${c.n}/${month + 1}: ${sec > 0 ? fmt(t.minutesN, minutesOf(sec)) : amazonOnly ? t.sxLegendAmazon : t.sxNoReadingShort}`;
           const inner = (
             <>
               <span className="scx-cal__n">{c.n}</span>

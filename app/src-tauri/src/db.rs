@@ -21,6 +21,7 @@ impl Db {
         conn.execute_batch(crate::bookmarks::SCHEMA)?;
         conn.execute_batch(crate::annotations::SCHEMA)?;
         conn.execute_batch(crate::stats::SCHEMA)?;
+        crate::stats::migrate(&conn)?;
         conn.execute_batch(crate::vocab::SCHEMA)?;
         conn.execute_batch(crate::ai::SCHEMA)?;
         conn.execute_batch(crate::goodreads::SCHEMA)?;

@@ -4,12 +4,14 @@ import { MobileReaderSheet } from "../mobile/MobileReaderSheet";
 import { STR, type Lang } from "../i18n";
 import { Icon } from "../icons";
 import { fmt } from "./format";
+import { AmazonDaysRow, KindleAppRow } from "./KindleSources";
 import { ManualPanel } from "./ManualReading";
 import { DAILY_GOALS, saveStatsSettings, yearlyGoals } from "./settings";
+import { Switch } from "./Switch";
 import type { LibraryRow } from "../types";
 import type { StatsSummary } from "./types";
 
-/** Goals, the Kindle estimate and adding paper reading, in a sheet opened from the Stats header. */
+/** Goals, the Kindle estimate, the Kindle app and Amazon's days read, and adding paper reading, in a sheet opened from the Stats header. */
 export function SettingsSheet({ lang, s, rows, onChanged, onClose }: { lang: Lang; s: StatsSummary; rows: LibraryRow[]; onChanged: () => void; onClose: () => void }) {
   const t = STR[lang];
   const [manualOpen, setManualOpen] = useState(false);
@@ -28,8 +30,10 @@ export function SettingsSheet({ lang, s, rows, onChanged, onClose }: { lang: Lan
         </div>
         <label className="scx-settings__row scx-settings__row--toggle">
           <span>{t.sxKindleToggle}<small>{t.sxKindleToggleHint}</small></span>
-          <input type="checkbox" checked={s.kindle_estimates} onChange={(e) => set({ kindleEstimates: e.target.checked })} />
+          <Switch on={s.kindle_estimates} onChange={(on) => set({ kindleEstimates: on })} />
         </label>
+        <KindleAppRow lang={lang} onChanged={onChanged} />
+        <AmazonDaysRow lang={lang} days={s.amazon_days} onChanged={onChanged} />
         <button className="scx-settings__row scx-settings__row--button" aria-expanded={manualOpen} onClick={() => setManualOpen((o) => !o)}>
           <span>{t.prAdd}</span>
           <Icon name={manualOpen ? "chevronDown" : "arrowR"} size={18} />

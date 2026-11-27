@@ -18,12 +18,16 @@ export interface PeriodDay {
   day: string;
   /** Measured in the in-app reader. */
   app_sec: number;
-  /** Estimated from Kindle progress (0 when estimates are off). */
+  /** Estimated from Kindle progress (0 when estimates are off); what is left once `kindle_app_sec` is taken off. */
   kindle_sec: number;
+  /** Measured: the Kindle app on this phone was on screen (Android). */
+  kindle_app_sec: number;
   /** Typed in by hand (paper books). */
   manual_sec: number;
   /** The daily goal was reached. */
   met: boolean;
+  /** Amazon says the account read on some Kindle that day, whatever the minutes are. */
+  amazon_read: boolean;
   /** Books read that day, most first (books no longer in the library are left out). */
   books: DayBook[];
 }
@@ -105,7 +109,7 @@ export interface PeriodStats {
   days: PeriodDay[];
   total_sec: number;
   prev_total_sec: number;
-  /** Days with any reading. */
+  /** Days with any reading, or that Amazon says were read on a Kindle. */
   days_read: number;
   days_met: number;
   /** Longest run of goal days inside the period (same freeze rule as the streak). */
@@ -202,13 +206,41 @@ export interface DayRange {
   end: string;
 }
 
+/** amazon_days.rs `AmazonDays`: the days Amazon says were read on a Kindle, and how fresh that is. */
+export interface AmazonDays {
+  /** "none" (never asked), "ok", "needs_signin" or "error". */
+  status: "none" | "ok" | "needs_signin" | "error";
+  /** When they were last fetched (unix seconds). */
+  fetched_at: number | null;
+  count: number;
+}
+
+/** kindle_app.rs `UsageStatus`, returned by `kindle_usage_status`. */
+export interface KindleUsage {
+  /** Android only. */
+  supported: boolean;
+  /** "Usage access" was granted in the system settings. */
+  granted: boolean;
+  /** The setting (on unless switched off). */
+  enabled: boolean;
+}
+
+/** stats.rs `KindleTick`, returned by `kindle_activity_tick`. */
+export interface KindleTick {
+  minutes: number;
+  /** Some book's position moved since the last look. */
+  moved: boolean;
+}
+
 /** stats.rs `Summary`, returned by `stats_summary` (title bar, Home and the cards that need no period). */
 export interface StatsSummary {
   today: string;
   goal_minutes: number;
   kindle_estimates: boolean;
+  /** Measured today: in the app, paper books and the Kindle app on this phone. */
   today_app_sec: number;
   today_kindle_sec: number;
+  amazon_days: AmazonDays;
   streak: {
     current: number;
     longest: number;
@@ -218,7 +250,7 @@ export interface StatsSummary {
     current_start: string | null;
     longest_range: DayRange | null;
   };
-  /** Days with any reading in the last year; `app_sec` includes paper reading typed in by hand. */
+  /** Days with any reading in the last year; `app_sec` includes paper reading typed in by hand and time in the phone's Kindle app. */
   days: { day: string; app_sec: number; kindle_sec: number; merged: boolean }[];
   total_seconds: number;
   books_finished: number;

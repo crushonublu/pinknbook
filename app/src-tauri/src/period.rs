@@ -16,8 +16,8 @@ use crate::db::Db;
 use crate::genre;
 use crate::meta;
 use crate::stats::{
-    compute_streak, goal_minutes, kindle_estimates_on, met_days, paper_titles, per_day, read_log, reading_day, slot_class,
-    slot_hour, sync_book_events, Events, SlotClass,
+    compute_streak, goal_minutes, met_days, paper_titles, per_day, read_log, reading_day, slot_class,
+    slot_hour, sync_book_events, Events, SlotClass, Sources,
 };
 
 /// Books read for less than this in a period do not count as "read".
@@ -38,15 +38,34 @@ pub struct PeriodDay {
     pub day: String,
     /// Measured in the in-app reader.
     pub app_sec: i64,
-    /// Estimated from Kindle progress (0 when estimates are off).
+    /// Estimated from Kindle progress (0 when estimates are off). What is
+    /// left once the time in this phone's Kindle app is taken off.
     pub kindle_sec: i64,
+    /// Measured: the Kindle app on this phone was on screen (0 when that is
+    /// switched off).
+    pub kindle_app_sec: i64,
     /// Typed in by hand.
     pub manual_sec: i64,
     /// The daily goal was reached.
     pub met: bool,
+    /// Amazon says the account read on some Kindle that day (whatever the
+    /// minutes above are; false when Kindle estimates are off).
+    pub amazon_read: bool,
     /// Books read that day, most first. Books no longer in the library are
     /// left out (their time still counts in the seconds above).
     pub books: Vec<DayBook>,
+}
+
+impl PeriodDay {
+    /// Seconds read that day, from every source.
+    pub fn seconds(&self) -> i64 {
+        self.app_sec + self.kindle_sec + self.kindle_app_sec + self.manual_sec
+    }
+
+    /// A day that counts as read: it has minutes, or Amazon says it was read.
+    fn is_read(&self) -> bool {
+        self.seconds() > 0 || self.amazon_read
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,7 +149,7 @@ pub struct PeriodStats {
     pub days: Vec<PeriodDay>,
     pub total_sec: i64,
     pub prev_total_sec: i64,
-    /// Days with any reading.
+    /// Days with any reading, or that Amazon says were read on a Kindle.
     pub days_read: i64,
     pub days_met: i64,
     /// Longest run of goal days inside the period (a missed day a week is
@@ -214,14 +233,19 @@ pub(crate) fn period_stats(db: &Db, kind: &str, anchor: Option<NaiveDate>, now: 
     }
     let today = reading_day(now);
     let goal = goal_minutes(db);
-    let use_kindle = kindle_estimates_on(db);
+    // The settings are read before the connection is taken (it is not re-entrant).
+    let sources = Sources::load(db);
+    let use_kindle = sources.kindle;
     let rows = db.list_library().map_err(|e| e.to_string())?;
     let lib: HashMap<&str, &crate::db::LibraryRow> = rows.iter().map(|r| (r.asin.as_str(), r)).collect();
 
     let conn = db.0.lock().unwrap();
     sync_book_events(&conn, &rows, today);
-    let log = read_log(&conn, use_kindle)?;
+    let log = read_log(&conn, sources)?;
     let by_day = per_day(&log);
+    // Days Amazon says were read count as read even without minutes, as long as
+    // the Kindle estimate (what they come from) is on.
+    let amazon_days = if use_kindle { crate::amazon_days::days_read(&conn) } else { Default::default() };
     let events = Events::load(&conn);
     let paper = paper_titles(&conn);
 
@@ -276,8 +300,10 @@ pub(crate) fn period_stats(db: &Db, kind: &str, anchor: Option<NaiveDate>, now: 
             day: d.to_string(),
             app_sec: agg.map_or(0, |a| a.app),
             kindle_sec: agg.map_or(0, |a| a.kindle),
+            kindle_app_sec: agg.map_or(0, |a| a.kindle_app),
             manual_sec: agg.map_or(0, |a| a.manual),
             met: total >= goal * 60,
+            amazon_read: amazon_days.contains(&d),
             books,
         });
         d += Duration::days(1);
@@ -288,7 +314,9 @@ pub(crate) fn period_stats(db: &Db, kind: &str, anchor: Option<NaiveDate>, now: 
 
     let total_sec: i64 = by_day.range(start..=end).map(|(_, a)| a.total()).sum();
     let prev_total_sec: i64 = prev.map_or(0, |(s, e)| by_day.range(s..=e).map(|(_, a)| a.total()).sum());
-    let days_read = days.iter().filter(|x| x.app_sec + x.kindle_sec + x.manual_sec > 0).count() as i64;
+    let days_read = days.iter().filter(|x| x.is_read()).count() as i64;
+    // The average is over the days that have minutes.
+    let days_timed = days.iter().filter(|x| x.seconds() > 0).count() as i64;
     let days_met = days.iter().filter(|x| x.met).count() as i64;
     let met_in_period: HashSet<NaiveDate> = met_days(&by_day, goal).into_iter().filter(|d| *d >= start && *d <= end).collect();
     let streak_best_in_period = compute_streak(&met_in_period, end.min(today)).longest;
@@ -379,7 +407,7 @@ pub(crate) fn period_stats(db: &Db, kind: &str, anchor: Option<NaiveDate>, now: 
 
     let best_day = days
         .iter()
-        .map(|x| (x, x.app_sec + x.kindle_sec + x.manual_sec))
+        .map(|x| (x, x.seconds()))
         .filter(|(_, s)| *s > 0)
         .fold(None::<(&PeriodDay, i64)>, |best, (x, s)| match best {
             Some((_, b)) if b >= s => best,
@@ -397,9 +425,8 @@ pub(crate) fn period_stats(db: &Db, kind: &str, anchor: Option<NaiveDate>, now: 
         }
         for x in &days {
             if let Some(ms) = per_month.get_mut(&x.day[..7]) {
-                let s = x.app_sec + x.kindle_sec + x.manual_sec;
-                ms.days_read += (s > 0) as i64;
-                ms.seconds += s;
+                ms.days_read += x.is_read() as i64;
+                ms.seconds += x.seconds();
             }
         }
         for f in &finished {
@@ -418,7 +445,7 @@ pub(crate) fn period_stats(db: &Db, kind: &str, anchor: Option<NaiveDate>, now: 
         early_share: share(early),
         top_genre: genres.first().map(|g| g.id.clone()),
         trend_pct: (prev_total_sec > 0).then(|| (total_sec - prev_total_sec) as f64 * 100.0 / prev_total_sec as f64),
-        avg_min_per_reading_day: if days_read > 0 { total_sec as f64 / 60.0 / days_read as f64 } else { 0.0 },
+        avg_min_per_reading_day: if days_timed > 0 { total_sec as f64 / 60.0 / days_timed as f64 } else { 0.0 },
         fast_finishes,
     };
 
@@ -639,6 +666,44 @@ mod tests {
         assert_eq!(on.hours[10], 300);
         // The paper book shows up with its own title.
         assert_eq!(off.books["paper:paper"].title, "Paper");
+    }
+
+    #[test]
+    fn kindle_app_time_and_amazon_days_in_a_week() {
+        let t = TempDb::new("p-kindle-app");
+        t.add_book("A", "A");
+        t.log("2026-11-16", "A", "kindle", "h10", 300); // 5 min read on another device
+        t.log("2026-11-16", "A", "kindle", "kindle_phone", 0); // names the book of the phone's time, no seconds
+        t.log("2026-11-16", "A", "kindle_app", "h10", 1200);
+        t.log("2026-11-17", "kindle:app", "kindle_app", "h02", 600); // a pseudo book: counted, never listed
+        t.db().0.lock().unwrap().execute_batch("INSERT INTO amazon_day_read (day) VALUES ('2026-11-17'), ('2026-11-18'), ('2026-11-30');").unwrap();
+        let w = week(&t, "2026-11-18", "2026-11-22 12:00");
+        let mon = &w.days[0];
+        assert_eq!((mon.app_sec, mon.kindle_sec, mon.kindle_app_sec, mon.seconds()), (0, 300, 1200, 1500));
+        assert_eq!(mon.books.iter().map(|b| (b.asin.as_str(), b.seconds)).collect::<Vec<_>>(), [("A", 1500)]);
+        let tue = &w.days[1];
+        assert_eq!((tue.kindle_app_sec, tue.amazon_read, tue.books.len()), (600, true, 0));
+        // Wednesday has no minutes, but Amazon says it was read.
+        let wed = &w.days[2];
+        assert_eq!((wed.seconds(), wed.amazon_read, wed.met), (0, true, false));
+        assert!(!mon.amazon_read);
+        assert_eq!((w.days_read, w.days_met), (3, 2)); // Tuesday's 10 minutes just reach the goal
+        assert_eq!(w.total_sec, 2100);
+        assert_eq!(w.hours[2], 600);
+        // Hours of the day use the measured time like in-app reading; the average is over days with minutes.
+        assert_eq!(w.hours[10], 300 + 1200);
+        assert_eq!(w.persona.avg_min_per_reading_day, 2100.0 / 60.0 / 2.0);
+        assert!(w.top_books.iter().all(|b| b.asin != "kindle:app"));
+        // Without Kindle estimates, Amazon's days are not used; the measured time stays.
+        set_setting(t.db(), "kindle_estimates", "0").unwrap();
+        let off = week(&t, "2026-11-18", "2026-11-22 12:00");
+        assert_eq!((off.days[0].kindle_sec, off.days[0].kindle_app_sec), (0, 1200));
+        assert!(off.days.iter().all(|x| !x.amazon_read));
+        assert_eq!(off.days_read, 2);
+        // The year strip counts the days read the same way.
+        set_setting(t.db(), "kindle_estimates", "1").unwrap();
+        let y = period_stats(t.db(), "year", None, at("2026-11-22 12:00")).unwrap();
+        assert_eq!(y.months[10].days_read, 4);
     }
 
     #[test]

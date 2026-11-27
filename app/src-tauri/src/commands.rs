@@ -429,7 +429,7 @@ pub async fn push_reading_position(
         .await
         .map_err(|e| e.to_string())?;
     let db: State<Db> = app.state();
-    crate::stats::note_own_position(&db, &asin);
+    crate::stats::note_own_position(&db, &asin, location);
     Ok(())
 }
 
@@ -477,7 +477,7 @@ pub async fn push_status_to_kindle(
     client::upload_reading_position(&creds_bundle, &asin, &cde_type, location, acr.as_deref())
         .await
         .map_err(|e| e.to_string())?;
-    crate::stats::note_own_position(&db, &asin);
+    crate::stats::note_own_position(&db, &asin, location);
 
     // Read it back: what Amazon now says, stored for the library card.
     let book = client::Book {

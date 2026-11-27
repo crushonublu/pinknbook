@@ -14,9 +14,9 @@
 // finished book and no recap. Paper reading added by hand, genres picked on a
 // book's page and recaps deleted are kept for the life of the page.
 
-import { addDays, dayKey, daysBetween, parseDay, weekStart } from "../stats/format";
+import { addDays, dayKey, daySeconds, daysBetween, parseDay, weekStart } from "../stats/format";
 import type {
-  BadgeId, BookRef, DayMarks, DayRange, GenreInfo, GenreShare, PeriodDay, PeriodKind, PeriodStats, StatsSummary, WrapDoc, WrapKind, WrapSummary,
+  AmazonDays, BadgeId, BookRef, DayMarks, DayRange, GenreInfo, GenreShare, PeriodDay, PeriodKind, PeriodStats, StatsSummary, WrapDoc, WrapKind, WrapSummary,
 } from "../stats/types";
 import type { LibraryRow, SpineFont, SpineStyle } from "../types";
 
@@ -28,8 +28,20 @@ const FIRST_DAY = "2025-10-01";
 /** Hour-of-day data exists from here on, as when it was added to the app. */
 const HOURS_SINCE = "2026-03-01";
 
-/** What the Settings of the page change. */
-export const settings = { goalMinutes: 20, goalBooksYear: 24, kindleEstimates: true };
+/** The phone view: the Kindle app on the phone is measured there (Android only). */
+export const MOBILE = new URLSearchParams(location.search).get("view") === "mobile";
+
+/** What the Settings of the page change. `usageGranted` is Android's "Usage access" (`?usage=granted` starts with it given). */
+export const settings = {
+  goalMinutes: 20,
+  goalBooksYear: 24,
+  kindleEstimates: true,
+  kindleApp: true,
+  usageGranted: new URLSearchParams(location.search).get("usage") === "granted",
+};
+
+/** The state of the days read from Amazon: `?amazon=ok|needs_signin|error|none`. */
+const AMAZON_STATUS = (new URLSearchParams(location.search).get("amazon") ?? "ok") as AmazonDays["status"];
 
 // ---- Random numbers ------------------------------------------------------------------------
 
@@ -273,7 +285,7 @@ function periodDay(day: string): PeriodDay {
   return {
     ...base,
     manual_sec: manual,
-    met: base.app_sec + base.kindle_sec + manual >= settings.goalMinutes * 60,
+    met: total({ ...base, manual_sec: manual }) >= settings.goalMinutes * 60,
     books: [...books].map(([asin, seconds]) => ({ asin, seconds })).sort((a, b) => b.seconds - a.seconds),
   };
 }
@@ -281,26 +293,34 @@ function periodDay(day: string): PeriodDay {
 /** One day of the story, honouring the Kindle-estimate setting. */
 function storyDay(day: string): PeriodDay {
   const raw = RAW.get(day);
-  if (!raw) return { day, app_sec: 0, kindle_sec: 0, manual_sec: 0, met: false, books: [] };
+  // Some days without reading in pntome were read on a Kindle: Amazon knows, there are no minutes.
+  const elsewhere = settings.kindleEstimates && !EMPTY && day <= TODAY && (raw ? raw.kindle : unit(`${day}az`) < 0.3);
+  if (!raw) return { day, app_sec: 0, kindle_sec: 0, kindle_app_sec: 0, manual_sec: 0, met: false, amazon_read: elsewhere, books: [] };
   const sec = raw.min * 60;
   const books = raw.books.map((b) => ({ asin: b.asin, seconds: Math.round(sec * b.share) }));
   const manual = books.filter((b) => byAsin.get(b.asin)!.paper).reduce((n, b) => n + b.seconds, 0);
   const digital = sec - manual;
-  const kindle = raw.kindle && settings.kindleEstimates ? Math.round(digital * 0.3) : 0;
+  const estimate = raw.kindle && settings.kindleEstimates ? Math.round(digital * 0.3) : 0;
+  // On the phone, a fifth of a Kindle day was measured in the Kindle app; it comes off the estimate.
+  const kindleApp = MOBILE && settings.kindleApp && raw.kindle ? Math.round(digital * 0.2) : 0;
+  const kindle = Math.max(0, estimate - kindleApp);
   // With estimates off, only the in-app share of a Kindle day counts.
-  const app = raw.kindle && !settings.kindleEstimates ? Math.round(digital * 0.7) : digital - kindle;
-  const total = app + kindle + manual;
+  const app = raw.kindle && !settings.kindleEstimates ? Math.round(digital * 0.7) : digital - estimate;
   return {
     day,
     app_sec: app,
     kindle_sec: kindle,
+    kindle_app_sec: kindleApp,
     manual_sec: manual,
-    met: total >= settings.goalMinutes * 60,
+    met: app + kindle + kindleApp + manual >= settings.goalMinutes * 60,
+    amazon_read: elsewhere,
     books: books.sort((a, b) => b.seconds - a.seconds),
   };
 }
 
-const total = (d: PeriodDay) => d.app_sec + d.kindle_sec + d.manual_sec;
+const total = daySeconds;
+/** A day with minutes, or that Amazon says was read on a Kindle. */
+const isRead = (d: PeriodDay) => total(d) > 0 || d.amazon_read;
 
 /** Highlights, notes and saved words of a day (also what `stats_day` answers). */
 export function dayMarks(day: string): DayMarks {
@@ -420,7 +440,7 @@ export function periodStats(kind: PeriodKind, anchor: string | null): PeriodStat
   const days = eachDay(start, end).map(periodDay);
   const totalSec = days.reduce((n, d) => n + total(d), 0);
   const prevTotal = prev ? eachDay(prev.start, prev.end).reduce((n, d) => n + total(periodDay(d)), 0) : 0;
-  const daysRead = days.filter((d) => total(d) > 0).length;
+  const daysRead = days.filter(isRead).length;
 
   const perBook = new Map<string, number>();
   for (const d of days) for (const b of d.books) perBook.set(b.asin, (perBook.get(b.asin) ?? 0) + b.seconds);
@@ -453,7 +473,7 @@ export function periodStats(kind: PeriodKind, anchor: string | null): PeriodStat
           const inMonth = days.filter((d) => d.day.startsWith(month));
           return {
             month,
-            days_read: inMonth.filter((d) => total(d) > 0).length,
+            days_read: inMonth.filter(isRead).length,
             seconds: inMonth.reduce((n, d) => n + total(d), 0),
             finished: finished.filter((f) => f.day.startsWith(month)).length,
           };
@@ -522,6 +542,13 @@ const BADGES: [BadgeId, number[], number][] = [
   ["variety", [3, 7, 14, 30], 5],
 ];
 
+/** What `amazon_days_refresh` answers: the days read on a Kindle that the story has, and the state of the fetch. */
+export function amazonDays(): AmazonDays {
+  const count = EMPTY ? 0 : eachDay(FIRST_DAY, TODAY).filter((d) => periodDay(d).amazon_read).length;
+  // A fetch that failed keeps the days it had; "none" has not asked yet.
+  return { status: AMAZON_STATUS, fetched_at: AMAZON_STATUS === "none" ? null : Date.UTC(2026, 10, 26, 8, 30) / 1000, count };
+}
+
 export function summary(): StatsSummary {
   const today = periodDay(TODAY);
   const past = eachDay(addDays(TODAY, -364), TODAY).map(periodDay).filter((d) => total(d) > 0);
@@ -532,10 +559,11 @@ export function summary(): StatsSummary {
     today: TODAY,
     goal_minutes: settings.goalMinutes,
     kindle_estimates: settings.kindleEstimates,
-    today_app_sec: today.app_sec + today.manual_sec,
+    today_app_sec: today.app_sec + today.manual_sec + today.kindle_app_sec,
     today_kindle_sec: today.kindle_sec,
+    amazon_days: amazonDays(),
     streak: s,
-    days: past.map((d) => ({ day: d.day, app_sec: d.app_sec + d.manual_sec, kindle_sec: d.kindle_sec, merged: false })),
+    days: past.map((d) => ({ day: d.day, app_sec: d.app_sec + d.manual_sec + d.kindle_app_sec, kindle_sec: d.kindle_sec, merged: false })),
     total_seconds: all.total_sec,
     books_finished: FINISHED.length + UNDATED,
     goal_books_year: settings.goalBooksYear,

@@ -20,6 +20,7 @@ import { TopBooks } from "./TopBooks";
 import { isNewReader } from "./streak";
 import { useStatsPage } from "./useStatsPage";
 import { WrapList } from "../wrap/WrapOffers";
+import { Switch } from "./Switch";
 import type { LibraryRow } from "../types";
 import type { StatsSummary, WrapsAccess } from "./types";
 import "./stats.css";
@@ -106,7 +107,7 @@ export function StatsPage({ lang, s, loadFailed = false, rows, onBack, onChanged
           {wraps && <WrapList lang={lang} wraps={wraps.list} onOpen={wraps.onOpen} onDelete={wraps.onDelete} />}
           <label className="scx-toggle">
             <span>{t.sxKindleToggle}<small>{t.sxKindleToggleHint}</small></span>
-            <input type="checkbox" checked={s.kindle_estimates} onChange={(e) => saveStatsSettings({ kindleEstimates: e.target.checked }, onChanged)} />
+            <Switch on={s.kindle_estimates} onChange={(on) => saveStatsSettings({ kindleEstimates: on }, onChanged)} />
           </label>
         </>
       )}

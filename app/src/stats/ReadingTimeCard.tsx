@@ -10,8 +10,9 @@ const CHART_H = 128;
 
 /**
  * Minutes read each day over the last 7 or 30 days, stacked: pntome on the
- * bottom, paper books in the middle and the Kindle estimate on top, with the
- * daily goal as a dashed line and the total against the span before it.
+ * bottom, paper books and the Kindle app on this phone (measured) in the
+ * middle and the Kindle estimate on top, with the daily goal as a dashed line
+ * and the total against the span before it.
  */
 export function ReadingTimeCard({ lang, today, goalMinutes, days, initialSpan = 7 }: {
   lang: Lang;
@@ -29,15 +30,24 @@ export function ReadingTimeCard({ lang, today, goalMinutes, days, initialSpan = 
     Array.from({ length: n }, (_, i) => {
       const key = addDays(end, i - n + 1);
       const d = days.get(key);
-      return { key, app: (d?.app_sec ?? 0) / 60, kindle: (d?.kindle_sec ?? 0) / 60, manual: (d?.manual_sec ?? 0) / 60 };
+      return {
+        key,
+        app: (d?.app_sec ?? 0) / 60,
+        kindleApp: (d?.kindle_app_sec ?? 0) / 60,
+        kindle: (d?.kindle_sec ?? 0) / 60,
+        manual: (d?.manual_sec ?? 0) / 60,
+      };
     });
   const bars = window(today, span);
-  const sum = (list: { app: number; kindle: number; manual: number }[]) => list.reduce((n, d) => n + (d.app + d.kindle + d.manual) * 60, 0);
+  const sum = (list: { app: number; kindleApp: number; kindle: number; manual: number }[]) =>
+    list.reduce((n, d) => n + (d.app + d.kindleApp + d.kindle + d.manual) * 60, 0);
   const totalSec = sum(bars);
   const prevSec = sum(window(addDays(today, -span), span));
   const change = prevSec > 0 ? Math.round(((totalSec - prevSec) * 100) / prevSec) : 0;
 
-  const top = Math.max(goalMinutes * 1.5, ...bars.map((d) => d.app + d.kindle + d.manual));
+  const top = Math.max(goalMinutes * 1.5, ...bars.map((d) => d.app + d.kindleApp + d.kindle + d.manual));
+  // The phone's Kindle app only shows where it is measured at all.
+  const hasKindleApp = bars.some((d) => d.kindleApp > 0);
   const px = (m: number) => `${Math.round((m / top) * CHART_H)}px`;
   const labelOf = (key: string, i: number) => {
     if (key === today) return t.msToday;
@@ -70,6 +80,7 @@ export function ReadingTimeCard({ lang, today, goalMinutes, days, initialSpan = 
         {bars.map((d, i) => (
           <div key={d.key} className={`scx-bars__col${d.key === today ? " is-today" : ""}`}>
             {d.kindle > 0 && <i className="is-kindle" style={{ height: px(d.kindle) }} />}
+            {d.kindleApp > 0 && <i className="is-kindleapp" style={{ height: px(d.kindleApp) }} />}
             {d.manual > 0 && <i className="is-manual" style={{ height: px(d.manual) }} />}
             {d.app > 0 && <i className="is-app" style={{ height: px(d.app) }} />}
             <span>{labelOf(d.key, i)}</span>
@@ -79,6 +90,7 @@ export function ReadingTimeCard({ lang, today, goalMinutes, days, initialSpan = 
 
       <div className="scx-legend">
         <span><i className="is-app" />{t.sxInApp}</span>
+        {hasKindleApp && <span><i className="is-kindleapp" />{t.sxKindleApp}</span>}
         <span><i className="is-kindle" />{t.sxKindleEst}</span>
         <span><i className="is-manual" />{t.sxManual}</span>
         <span><i className="is-goal" />{t.sxDayGoal}</span>
