@@ -179,7 +179,7 @@ export function StreakCalendar({ lang, s, period, year, onDay, onHow, onMonthCha
             <>
               <span className="scx-cal__n">{c.n}</span>
               {(desktop ? sec > 0 : today && sec > 0) && <span className="scx-cal__min">{desktop ? minutesOf(sec) : Math.floor(sec / 60)}′</span>}
-              {(desktop || !today) && d && d.books.length > 0 && (
+              {d && d.books.length > 0 && (
                 <span className="scx-cal__covers" aria-hidden="true">
                   {d.books.slice(0, 2).map((b) => <span key={b.asin} className="scx-cover scx-cover--cal"><RefCover asin={b.asin} book={period.books[b.asin]} /></span>)}
                 </span>

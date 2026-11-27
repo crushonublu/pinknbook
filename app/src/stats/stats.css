@@ -83,7 +83,7 @@
 .scx-cover .cover { width: 100%; height: 100%; aspect-ratio: auto; object-fit: cover; border-radius: inherit; }
 .scx-cover .cover--type { padding: 0; }
 .scx-cover :is(.cover--type__title, .cover--type__rule, .cover--type__author) { display: none; }
-.scx-cover--cal { width: 15px; height: 22px; box-shadow: 0 2px 4px rgba(0, 0, 0, .45); }
+.scx-cover--cal { width: 18px; height: 27px; border-radius: 2px; box-shadow: 0 2px 4px rgba(0, 0, 0, .45); }
 .scx-cover--cal + .scx-cover--cal { margin-left: -5px; }
 .scx-cover--fin { width: 15px; height: 22px; }
 .scx-cover--top { width: 22px; height: 32px; border-radius: 3px; }
@@ -184,7 +184,8 @@
 .scx-cal__cell:is(button):focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
 .scx-cal__n { position: absolute; left: 6px; top: 4px; font-size: 11px; font-weight: 600; }
 .scx-cal__cell.is-other span { position: absolute; left: 6px; top: 4px; font-size: 11px; font-weight: 600; }
-.scx-cal__min { position: absolute; left: 0; right: 0; bottom: 6px; text-align: center; font-size: 11px; font-weight: 700; color: var(--accent); }
+/* Today's minutes sit by the date, so the covers of what was read keep the bottom of the cell. */
+.scx-cal__min { position: absolute; top: 6px; right: 6px; font-size: 10.5px; font-weight: 700; color: var(--accent); }
 .scx-cal__cell.is-streak .scx-cal__min { color: var(--st-on-accent); }
 .scx-cal__covers { position: absolute; left: 0; right: 0; bottom: 5px; display: flex; justify-content: center; }
 .scx-cal__legend { display: flex; flex-wrap: wrap; gap: 12px 16px; padding: 0 4px; font-size: 12px; color: var(--st-label); }
