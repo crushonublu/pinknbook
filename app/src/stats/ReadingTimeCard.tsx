@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { STR, type Lang } from "../i18n";
-import { addDays, fmt, fmtDuration, names, parseDay } from "./format";
+import { addDays, fmt, fmtDuration, longDate, names, parseDay } from "./format";
 import type { PeriodDay } from "./types";
 
 type Span = 7 | 30;
@@ -12,7 +12,8 @@ const CHART_H = 128;
  * Minutes read each day over the last 7 or 30 days, stacked: pntome on the
  * bottom, paper books and the Kindle app on this phone (measured) in the
  * middle and the Kindle estimate on top, with the daily goal as a dashed line
- * and the total against the span before it.
+ * and the total against the span before it. Tapping a bar shows that day's
+ * minutes, part by part.
  */
 export function ReadingTimeCard({ lang, today, goalMinutes, days, initialSpan = 7 }: {
   lang: Lang;
@@ -24,6 +25,8 @@ export function ReadingTimeCard({ lang, today, goalMinutes, days, initialSpan = 
 }) {
   const t = STR[lang];
   const [span, setSpan] = useState<Span>(initialSpan);
+  /** The bar tapped, to show its minutes. */
+  const [sel, setSel] = useState<string | null>(null);
   const dow = names(t.msWeekdays);
 
   const window = (end: string, n: number) =>
@@ -69,24 +72,65 @@ export function ReadingTimeCard({ lang, today, goalMinutes, days, initialSpan = 
           )}
         </div>
         <div className="scx-seg scx-seg--small" role="group" aria-label={t.sxSpan}>
-          <button aria-pressed={span === 7} onClick={() => setSpan(7)}>{t.sxWeek}</button>
-          <button aria-pressed={span === 30} onClick={() => setSpan(30)}>{t.sxMonth}</button>
+          <button aria-pressed={span === 7} onClick={() => { setSpan(7); setSel(null); }}>{t.sxWeek}</button>
+          <button aria-pressed={span === 30} onClick={() => { setSpan(30); setSel(null); }}>{t.sxMonth}</button>
         </div>
       </div>
 
-      <div className={`scx-bars scx-bars--${span}`} role="img" aria-label={fmt(t.sxBarsAria, span)}>
+      <div className={`scx-bars scx-bars--${span}${sel ? " has-sel" : ""}`} role="group" aria-label={fmt(t.sxBarsAria, span)}>
         <div className="scx-bars__goal" style={{ bottom: `${22 + Math.round((goalMinutes / top) * CHART_H)}px` }} />
         <span className="scx-bars__goaltag" style={{ bottom: `${25 + Math.round((goalMinutes / top) * CHART_H)}px` }}>{goalMinutes}′</span>
         {bars.map((d, i) => (
-          <div key={d.key} className={`scx-bars__col${d.key === today ? " is-today" : ""}`}>
+          <button
+            key={d.key}
+            type="button"
+            className={`scx-bars__col${d.key === today ? " is-today" : ""}${d.key === sel ? " is-sel" : ""}`}
+            aria-pressed={d.key === sel}
+            aria-label={`${longDate(lang, d.key)}: ${fmtDuration(lang, Math.round((d.app + d.kindleApp + d.kindle + d.manual) * 60))}`}
+            onClick={() => setSel((v) => (v === d.key ? null : d.key))}
+          >
             {d.kindle > 0 && <i className="is-kindle" style={{ height: px(d.kindle) }} />}
             {d.kindleApp > 0 && <i className="is-kindleapp" style={{ height: px(d.kindleApp) }} />}
             {d.manual > 0 && <i className="is-manual" style={{ height: px(d.manual) }} />}
             {d.app > 0 && <i className="is-app" style={{ height: px(d.app) }} />}
             <span>{labelOf(d.key, i)}</span>
-          </div>
+          </button>
         ))}
       </div>
+
+      {(() => {
+        const d = sel ? bars.find((b) => b.key === sel) : undefined;
+        if (!d) return null;
+        const parts = [
+          { key: "app", min: d.app, label: t.sxInApp },
+          { key: "kindleapp", min: d.kindleApp, label: t.sxKindleApp },
+          { key: "kindle", min: d.kindle, label: t.sxKindleEst },
+          { key: "manual", min: d.manual, label: t.sxManual },
+        ]
+          // Whole minutes, so the parts add up to the total shown.
+          .map((p) => ({ ...p, min: Math.round(p.min) }))
+          .filter((p) => p.min > 0);
+        const total = parts.reduce((n, p) => n + p.min * 60, 0);
+        return (
+          <div className="scx-bars__detail" aria-live="polite">
+            <div className="scx-bars__detailhead">
+              <span>{longDate(lang, d.key)}</span>
+              <b>{total > 0 ? fmtDuration(lang, total) : t.sxNoReadingShort}</b>
+            </div>
+            {parts.length > 0 && (
+              <ul>
+                {parts.map((p) => (
+                  <li key={p.key}>
+                    <i className={`is-${p.key}`} aria-hidden="true" />
+                    <span>{p.label}</span>
+                    <b>{fmtDuration(lang, Math.round(p.min * 60))}</b>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="scx-legend">
         <span><i className="is-app" />{t.sxInApp}</span>
