@@ -31,6 +31,7 @@ import {
   type XrType,
 } from "./xrayIndex";
 import { castOf, type AiRole, type CastInfo } from "./xrayCast";
+import { MobileXRay } from "./XRayMobile";
 
 export const TYPE_ICON: Record<XrType, IconName> = { person: "person", place: "place", org: "org", term: "term" };
 export const TYPE_COLOR: Record<XrType, string> = { person: "#e5679a", place: "#4f8de2", org: "#d99a2b", term: "#3fb26b" };
@@ -183,6 +184,22 @@ export function useXray(view: any, asin: string, active: boolean, build: boolean
     [aiDescriptions, limit],
   );
 
+  /** Name-keyed AI notes re-keyed to the entity, and only if the AI saw no further than the limit. */
+  const ownedNote = useCallback(
+    (rec: Record<string, { text: string; upTo: number }> | undefined) => {
+      const m = new Map<string, string>();
+      for (const [name, v] of Object.entries(rec ?? {})) {
+        const o = owner.get(name);
+        if (o && v.text && v.upTo <= limit + 1e-6 && (o === name || !m.has(o))) m.set(o, v.text);
+      }
+      return m;
+    },
+    [owner, limit],
+  );
+  const captions = useMemo(() => ownedNote(ai.captions), [ownedNote, ai.captions]);
+  const aiGroups = useMemo(() => ownedNote(ai.groups), [ownedNote, ai.groups]);
+  const captionOf = useCallback((key: string): string | null => captions.get(key) ?? null, [captions]);
+
   // How much each person matters so far (main / minor / passing), and who is the author.
   const roles = useMemo(() => {
     const m = new Map<string, AiRole>();
@@ -217,6 +234,9 @@ export function useXray(view: any, asin: string, active: boolean, build: boolean
     descriptionOf,
     cast,
     castInfo,
+    captionOf,
+    /** Entity key → the group the AI put them in. */
+    aiGroups,
     /** The reader's place (the limit is this unless the whole book is shown). */
     here: fraction,
     ready: !!index && progress == null,
@@ -432,11 +452,19 @@ export function XRayPanel({
   chapterOf,
   openMention = null,
   onOpenMention,
+  bookTitle,
+  onFocus,
+  mapLine,
 }: {
   lang: Lang;
   x: XrayState;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   view: any;
+  bookTitle?: string;
+  /** Android: open the map centred on someone. */
+  onFocus?: (key: string) => void;
+  /** Android: the line under the map card. */
+  mapLine?: string;
   selected: string | null;
   onSelect: (key: string | null) => void;
   onOpenGraph: () => void;
@@ -452,6 +480,26 @@ export function XRayPanel({
   const [type, setType] = useState<XrType | "all">(isAndroid ? "person" : "all");
   const [filter, setFilter] = useState("");
   const [term, setTerm] = useState("");
+  if (isAndroid) {
+    return (
+      <MobileXRay
+        lang={lang}
+        x={x}
+        view={view}
+        bookTitle={bookTitle}
+        selected={selected}
+        onSelect={onSelect}
+        onOpenGraph={onOpenGraph}
+        onFocus={onFocus}
+        formatPos={formatPos}
+        onGo={onGo}
+        chapterOf={chapterOf}
+        openMention={openMention}
+        onOpenMention={onOpenMention}
+        mapLine={mapLine}
+      />
+    );
+  }
   const entity = selected ? x.byKey.get(selected) ?? null : null;
 
   if (entity) {
@@ -971,7 +1019,7 @@ export function MentionList({
   const total = later ? ms.length : read.length;
   return (
     <>
-      <ul className="xr__mentions xr-ms">{rows}</ul>
+      <ul className="xr-ms">{rows}</ul>
       {total > shown && (
         <button className="xr__link" onClick={() => setShown((n) => n + 30)}>
           {t.xrMoreMentions} ({total - shown})

@@ -1688,6 +1688,7 @@ export default function Reader({
                   onGo={(m) => void xrayGo(m, "panel")}
                   chapterOf={chapterOf}
                   openMention={xrOpen}
+                  bookTitle={row.title || row.asin}
                   onOpenMention={setXrOpen}
                 />
               ) : undefined

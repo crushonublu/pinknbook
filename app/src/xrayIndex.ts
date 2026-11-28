@@ -73,6 +73,10 @@ export interface XrAi {
   labels: Record<string, { label: string; detail: string; upTo: number; lang?: string }>;
   /** Name → how much the person matters, as the AI judged up to `upTo` (see xrayCast.ts `AiRole`). */
   roles?: Record<string, { role: "main" | "supporting" | "minor" | "not_a_character"; upTo: number }>;
+  /** Name → a few words on who they are ("Elizabeth's father"), for the line under the name. */
+  captions?: Record<string, { text: string; upTo: number; lang?: string }>;
+  /** Name → the group or side they belong to ("Theranos board"), for the map's groups. */
+  groups?: Record<string, { text: string; upTo: number; lang?: string }>;
 }
 
 export const EMPTY_EDITS: XrEdits = { merges: {}, hidden: [], names: {}, types: {}, terms: [], labels: {} };
