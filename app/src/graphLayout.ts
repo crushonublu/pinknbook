@@ -266,3 +266,157 @@ export function placeLabels(items: LabelItem[], obstacles: Box[], force = false)
   }
   return out;
 }
+
+// ---- Focus ring (phones) ------------------------------------------------------
+
+/** One person around the one in focus. */
+export interface RingNode {
+  key: string;
+  kind: RelKind;
+  /** How strong the tie is (chunks together); stronger first within a kind. */
+  strength: number;
+  /** Width of the name under the disc (capped by the layout). */
+  nameW: number;
+  /** Width of the tie's label text, 0 for none. */
+  labelW: number;
+  /** Outer ring: the ring person this one hangs from (a tie of theirs, not of the focus). */
+  via?: string;
+}
+
+export interface RBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface RadialLayout {
+  center: { x: number; y: number; r: number };
+  nodes: { key: string; x: number; y: number; r: number; outer: boolean; via?: string; name: RBox }[];
+  /**
+   * Labels on the spokes (`key`: the person the spoke goes to); `short`: cut,
+   * the full text shows on tap; `under`: no room on the spoke, so under the name.
+   */
+  labels: (RBox & { key: string; short: boolean; under?: boolean })[];
+  /** Ring people left out (more than fit). */
+  more: string[];
+}
+
+export const RING_MAX = 10;
+const R_CENTER = 34;
+const R_RING = 22;
+const R_OUTER = 18;
+const NAME_H = 16;
+const NAME_MAX = 96;
+const LABEL_H = 22;
+const LABEL_PAD = 20;
+const LABEL_SHORT = 56;
+
+type Shape = RBox | { cx: number; cy: number; r: number };
+/** Boxes and discs (a disc is round: a label may sit by its corner). */
+const overlaps = (a: Shape, b: Shape, m = 2): boolean => {
+  if ("cx" in a && "cx" in b) return Math.hypot(a.cx - b.cx, a.cy - b.cy) < a.r + b.r + m;
+  if ("cx" in a) return overlaps(b, a, m);
+  if (!("cx" in b)) return a.x < b.x + b.w + m && b.x < a.x + a.w + m && a.y < b.y + b.h + m && b.y < a.y + a.h + m;
+  const nx = Math.max(a.x, Math.min(b.cx, a.x + a.w));
+  const ny = Math.max(a.y, Math.min(b.cy, a.y + a.h));
+  return Math.hypot(nx - b.cx, ny - b.cy) < b.r + m;
+};
+const disc = (x: number, y: number, r: number) => ({ cx: x, cy: y, r });
+
+/**
+ * Someone in the middle and their direct ties on an ellipse around them
+ * (people with the same kind of tie side by side, the strongest first, from
+ * the top, clockwise), and a few ties of those people outside. Labels sit on
+ * the spokes about halfway out, moved along the spoke or cut short when they
+ * would cover something. The same people always land in the same places.
+ * `top` and `bottom` are kept free (header, card).
+ */
+export function radialLayout(w: number, h: number, ring: RingNode[], outer: RingNode[] = [], room: { top: number; bottom: number } = { top: 0, bottom: 0 }): RadialLayout {
+  const order = (n: RingNode) => KIND_ORDER.indexOf(n.kind === "same" ? "none" : n.kind);
+  const sorted = [...ring].sort((a, b) => order(a) - order(b) || b.strength - a.strength || (a.key < b.key ? -1 : 1));
+  const shown = sorted.slice(0, RING_MAX);
+  const more = sorted.slice(RING_MAX).map((n) => n.key);
+  const top = room.top;
+  const bottom = h - room.bottom;
+  const cx = w / 2;
+  const cy = (top + bottom) / 2;
+  const rx = Math.max(80, w / 2 - NAME_MAX / 2 - 6);
+  const ry = Math.max(80, Math.min((bottom - top) / 2 - R_RING - NAME_H - 12, rx * 1.4));
+
+  const taken: Shape[] = [disc(cx, cy, R_CENTER + 2)];
+  const nodes: RadialLayout["nodes"] = [];
+  const nameBox = (x: number, y: number, r: number, nameW: number): RBox => {
+    const nw = Math.min(nameW, NAME_MAX);
+    return { x: Math.min(w - 2 - nw, Math.max(2, x - nw / 2)), y: y + r + 3, w: nw, h: NAME_H };
+  };
+  shown.forEach((n, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / Math.max(1, shown.length);
+    // One person: straight up; two: up and down.
+    const x = cx + rx * Math.cos(a);
+    const y = cy + ry * Math.sin(a);
+    const name = nameBox(x, y, R_RING, n.nameW);
+    nodes.push({ key: n.key, x, y, r: R_RING, outer: false, name });
+    taken.push(disc(x, y, R_RING), name);
+  });
+
+  // Ties of the ring people, outside them along the same spoke, where there is room.
+  for (const o of outer) {
+    const from = nodes.find((v) => v.key === o.via && !v.outer);
+    if (!from || nodes.some((v) => v.key === o.key)) continue;
+    const dx = from.x - cx;
+    const dy = from.y - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    const x = from.x + (dx / len) * 78;
+    const y = from.y + (dy / len) * 78;
+    const name = nameBox(x, y, R_OUTER, o.nameW);
+    const me = disc(x, y, R_OUTER);
+    if (x - R_OUTER < 2 || x + R_OUTER > w - 2 || y - R_OUTER < top || name.y + name.h > bottom) continue;
+    if (taken.some((b) => overlaps(b, me) || overlaps(b, name))) continue;
+    nodes.push({ key: o.key, x, y, r: R_OUTER, outer: true, via: o.via, name });
+    taken.push(me, name);
+  }
+
+  // Labels: about halfway along each spoke, else a bit in or out, else cut short.
+  const labels: RadialLayout["labels"] = [];
+  const all = [...shown, ...outer];
+  for (const v of nodes) {
+    const n = all.find((m) => m.key === v.key);
+    if (!n || !n.labelW) continue;
+    const from = v.outer ? nodes.find((m) => m.key === v.via)! : { x: cx, y: cy };
+    const spots = v.outer ? [0.5, 0.4, 0.6] : [0.55, 0.47, 0.63, 0.4, 0.7];
+    // Beside the spoke too (above or below a level one), when on it there is no room.
+    const len = Math.hypot(v.x - from.x, v.y - from.y) || 1;
+    const px = -(v.y - from.y) / len;
+    const py = (v.x - from.x) / len;
+    const sides = [0, -1, 1];
+    let placed: RadialLayout["labels"][number] | null = null;
+    for (const short of [false, true]) {
+      const lw = (short ? Math.min(n.labelW, LABEL_SHORT) : n.labelW) + LABEL_PAD;
+      if (short && n.labelW <= LABEL_SHORT) break;
+      for (const [t, side] of sides.flatMap((d) => spots.map((t) => [t, d] as const))) {
+        const off = side * (LABEL_H / 2 + 3);
+        const x = from.x + (v.x - from.x) * t + px * off;
+        const y = from.y + (v.y - from.y) * t + py * off;
+        const b = { x: x - lw / 2, y: y - LABEL_H / 2, w: lw, h: LABEL_H };
+        if (b.x < 2 || b.x + b.w > w - 2 || b.y < top || b.y + b.h > bottom) continue;
+        if (taken.some((o) => overlaps(o, b)) || labels.some((o) => overlaps(o, b))) continue;
+        placed = { ...b, key: v.key, short };
+        break;
+      }
+      if (placed) break;
+    }
+    // No room on the spoke: under the person's name.
+    if (!placed) {
+      for (const lw of [n.labelW + LABEL_PAD, Math.min(n.labelW, LABEL_SHORT) + LABEL_PAD]) {
+        const b = { x: Math.min(w - 2 - lw, Math.max(2, v.x - lw / 2)), y: v.name.y + v.name.h + 1, w: lw, h: LABEL_H - 2 };
+        if (b.y + b.h > bottom) break;
+        if (taken.some((o) => o !== v.name && overlaps(o, b)) || labels.some((o) => overlaps(o, b))) continue;
+        placed = { ...b, key: v.key, short: lw < n.labelW + LABEL_PAD, under: true };
+        break;
+      }
+    }
+    if (placed) labels.push(placed);
+  }
+  return { center: { x: cx, y: cy, r: R_CENTER }, nodes, labels, more };
+}

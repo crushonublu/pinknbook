@@ -62,6 +62,10 @@ export interface XrEdits {
   autoMerged?: string[];
   /** Entity key → how much the reader says the person matters (over the AI and the rules; see xrayCast.ts). */
   tiers?: Record<string, "main" | "minor" | "passing">;
+  /** Entity key → the map group the reader moved them to (a group id, see xrayCast.ts `groups`). */
+  groups?: Record<string, string>;
+  /** Group id → the reader's name for it. */
+  groupNames?: Record<string, string>;
 }
 
 export interface XrAi {

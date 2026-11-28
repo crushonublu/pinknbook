@@ -116,3 +116,83 @@
 .is-android .mx-edit__group--forms .mobile-picker__trigger .icon { display: none; }
 .is-android .mx-edit__hide { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border: 1px solid #5c2b3a; border-radius: 14px; background: none; color: #ff8fa3; font: inherit; font-size: 15px; flex: none; }
 .is-android .mx-edit__done { min-height: 48px; border: 0; border-radius: 14px; background: #d6336a; color: #fff; font: inherit; font-size: 15px; font-weight: 600; flex: none; }
+
+/* The relationship map on a phone (root also has .xrg: full screen, sheets, AI box). */
+.is-android .xrm { background: #0f1115; color: #e7e9ee; color-scheme: dark; }
+.is-android .xrm-head { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 8px 12px 10px; border-bottom: 1px solid #1e222b; }
+.is-android .xrm-head__row { display: flex; align-items: center; gap: 8px; }
+.is-android .xrm-head__title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.is-android .xrm-head__title h2 { margin: 0; font-size: 20px; font-weight: 700; }
+.is-android .xrm-head__title span { font-size: 12.5px; color: #9aa3b2; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.is-android .xrm-tabs { margin: 0 4px; }
+.is-android .xrm-trail { display: flex; align-items: center; gap: 4px; margin: 0 4px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+.is-android .xrm-trail button { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px 0 6px; border: 0; border-radius: 18px; background: #171a21; color: #c3cad6; font: inherit; font-size: 13.5px; }
+.is-android .xrm-trail > button { padding-left: 12px; }
+.is-android .xrm-trail button.is-on { background: #2a2f3a; color: #fff; }
+.is-android .xrm-trail__step { display: inline-flex; align-items: center; gap: 4px; color: #6b7280; }
+.is-android .xrm-trail__av { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 11px; font-weight: 700; }
+.is-android .xrm-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 16px calc(24px + var(--mobile-safe-bottom)); }
+
+/* By group: a poster. */
+.is-android .xrm-poster { display: flex; flex-direction: column; gap: 16px; }
+.is-android .xrm-centers { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.is-android .xrm-center { flex: 1; max-width: 160px; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px; border: 0; border-radius: 20px; background: #171a21; color: #e7e9ee; font: inherit; text-align: center; }
+.is-android .xrm-center b { font-size: 15.5px; line-height: 1.25; overflow-wrap: anywhere; }
+.is-android .xrm-center small { font-size: 12px; color: #9aa3b2; line-height: 1.35; }
+.is-android .xrm-between { flex: none; max-width: 90px; padding: 4px 10px; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--k) 16%, transparent); color: var(--k); font: inherit; font-size: 12.5px; line-height: 1.3; }
+.is-android .xrm-frames { position: relative; display: flex; flex-direction: column; gap: 14px; padding-left: 22px; }
+.is-android .xrm-frames::before { content: ""; position: absolute; left: 6px; top: -16px; bottom: 24px; width: 2px; border-radius: 1px; background: #2a2f3a; }
+.is-android .xrm-frame { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 18px; background: #171a21; box-shadow: inset 0 0 0 1px #232833; }
+.is-android .xrm-frame__dot { position: absolute; left: -21px; top: 20px; width: 12px; height: 12px; border-radius: 50%; background: var(--k); box-shadow: 0 0 0 3px #0f1115; }
+.is-android .xrm-frame__dot::after { content: ""; position: absolute; left: 12px; top: 5px; width: 9px; height: 2px; background: #2a2f3a; }
+.is-android .xrm-frame header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.is-android .xrm-frame__name { min-width: 0; min-height: 40px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 0 2px; border: 0; background: none; color: #e7e9ee; font: inherit; text-align: left; }
+.is-android .xrm-frame__name b { font-size: 15.5px; font-weight: 700; overflow-wrap: anywhere; }
+.is-android .xrm-frame__name span { font-size: 12px; color: #9aa3b2; }
+.is-android .xrm-frame .mx-rel { --k: inherit; }
+.is-android .xrm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.is-android .xrm-person { min-width: 0; min-height: 104px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border: 0; border-radius: 14px; background: #1f2430; color: #e7e9ee; font: inherit; text-align: center; }
+.is-android .xrm-person b { max-width: 100%; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.is-android .xrm-person small { max-width: 100%; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 11.5px; line-height: 1.3; color: #9aa3b2; }
+.is-android .xrm-person--more { justify-content: center; background: transparent; box-shadow: inset 0 0 0 1px dashed #3a404d; border: 1px dashed #3a404d; }
+.is-android .xrm-more { font-size: 17px; font-weight: 700; color: #c3cad6; }
+.is-android .xrm-minor { padding: 0 4px; }
+.is-android .xrm-note { margin: 0 4px; font-size: 12px; line-height: 1.5; color: #6b7280; }
+
+/* In focus: a ring. */
+.is-android .xrm-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.is-android .xrm-lines { position: absolute; inset: 0; }
+.is-android .xrm-node { position: absolute; transform: translate(-50%, -50%); padding: 0; border: 0; background: none; color: #e7e9ee; font: inherit; }
+.is-android .xrm-node > span:not(.mx-av):not(.xrm-node__glow) { position: absolute; top: calc(100% + 3px); display: block; font-size: 12.5px; font-weight: 600; line-height: 16px; text-align: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-shadow: 0 1px 3px #0f1115; }
+.is-android .xrm-node > .mx-av { box-shadow: 0 0 0 3px #0f1115; }
+.is-android .xrm-node.is-outer > .mx-av { opacity: .85; }
+.is-android .xrm-node--center { z-index: 2; }
+.is-android .xrm-node__glow { display: block; border-radius: 50%; box-shadow: 0 0 0 6px color-mix(in srgb, var(--c) 30%, transparent); }
+.is-android .xrm-label { position: absolute; z-index: 1; box-sizing: border-box; padding: 0 10px; border: 0; border-radius: 11px; background: color-mix(in srgb, var(--k) 18%, #0f1115); color: color-mix(in srgb, var(--k) 70%, #fff); font: inherit; font-size: 12.5px; line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.is-android .xrm-ringmore { position: absolute; right: 12px; bottom: 8px; min-height: 36px; padding: 0 14px; border: 1px dashed #3a404d; border-radius: 18px; background: #0f1115; color: #c3cad6; font: inherit; font-size: 13px; }
+.is-android .xrm-alone { position: absolute; left: 0; right: 0; bottom: 24px; margin: 0; text-align: center; font-size: 13px; color: #9aa3b2; }
+.is-android .xrm-card { flex: none; margin: 0 12px calc(12px + var(--mobile-safe-bottom)); padding: 14px 16px; border-radius: 20px; background: #1b1f28; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); display: flex; flex-direction: column; gap: 10px; }
+.is-android .xrm-card__head { display: flex; align-items: center; gap: 12px; }
+.is-android .xrm-card__head > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.is-android .xrm-card h3 { margin: 0; font-size: 17px; font-weight: 700; }
+.is-android .xrm-card__head span { font-size: 13px; color: #9aa3b2; }
+.is-android .xrm-card p { margin: 0; font-size: 14px; line-height: 1.5; color: #c3cad6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.is-android .xrm-card__open { min-height: 46px; border: 0; border-radius: 23px; background: #2a2f3a; color: #e7e9ee; font: inherit; font-size: 15px; font-weight: 600; }
+
+/* As a list of ties. */
+.is-android .xrm-list { display: flex; flex-direction: column; gap: 14px; }
+.is-android .xrm-list__kind { display: flex; flex-direction: column; gap: 8px; }
+.is-android .xrm-list .mx-h { display: flex; align-items: center; gap: 8px; }
+.is-android .xrm-list .mx-h i { width: 18px; height: 3px; border-radius: 2px; }
+.is-android .xrm-tie__avs { flex: none; position: relative; width: 50px; height: 32px; }
+.is-android .xrm-tie__avs .mx-av { position: absolute; top: 0; box-shadow: 0 0 0 2px #1f2430; }
+.is-android .xrm-tie__avs .mx-av + .mx-av { left: 18px; }
+.is-android .xrm-tie__text { font-size: 14.5px; line-height: 1.35; overflow-wrap: anywhere; }
+.is-android .xrm-tie__text b { font-weight: 600; }
+.is-android .xrm-tie__side { color: #9aa3b2; }
+
+/* Sheets inside the map. */
+.is-android .xrm .xrm-tools { gap: 4px; }
+.is-android .xrm-group { display: flex; flex-direction: column; gap: 14px; padding-bottom: 16px; }
+.is-android .xrm-group__name { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #9aa3b2; }
+.is-android .xrm .xrg__panel { background: #171a21; color: #e7e9ee; border-color: #232833; }

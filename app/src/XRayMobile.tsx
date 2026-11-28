@@ -11,7 +11,7 @@ import { useMobileDismiss } from "./mobile/back";
 import { Switch } from "./stats/Switch";
 import { wikipediaSummary, type WikiSummary } from "./dictionary";
 import { relKind, type RelKind } from "./graphLayout";
-import { castOrder, type Tier } from "./xrayCast";
+import { castOrder, groups, type CastGroup, type Tier } from "./xrayCast";
 import { isFirstPerson, links, mentionContexts, pairKey, upTo, type Entity, type Link, type Mention, type XrType } from "./xrayIndex";
 import { avatarColor, initialOf, MentionList, TYPE_COLOR, TYPE_ICON, type XrayState } from "./XRay";
 
@@ -50,6 +50,40 @@ export function sideOf(x: XrayState, who: string, other: string): { text: string
   return { text: first ? parts[0] : parts[1], kind, from: lab.from };
 }
 
+/** The map's groups for the reader's place (the reader's moves, the AI's groups, then the rules). */
+export function useCastGroups(x: XrayState): { groups: CastGroup[]; center: Entity | null } {
+  return useMemo(() => {
+    const center = centerOf(x);
+    const gs = groups(x.ents, links(x.ents, x.limit), x.cast, x.limit, {
+      center: center?.key ?? null,
+      assign: x.edits.groups,
+      ai: x.aiGroups,
+      kindOf: (a, b) => relKind(x.labelOf(pairKey(a, b))?.text),
+    });
+    return { groups: gs, center };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [x.ents, x.limit, x.cast, x.edits.groups, x.aiGroups, x.labelOf, x.byKey]);
+}
+
+/** A group's name as the reader sees it. */
+export function groupName(lang: Lang, x: XrayState, g: CastGroup): string {
+  const t = STR[lang];
+  const own = x.edits.groupNames?.[g.id];
+  if (own) return own;
+  switch (g.kind) {
+    case "family":
+      return t.mxGroupFamily.replace("{0}", g.label);
+    case "narrator":
+      return t.mxGroupNarrator;
+    case "place":
+      return t.mxGroupPlace.replace("{0}", g.label);
+    case "others":
+      return t.mxGroupOthers;
+    default:
+      return g.label;
+  }
+}
+
 const cap = (s: string) => (s ? s[0].toLocaleUpperCase() + s.slice(1) : s);
 
 /** The first clause of a description, at most ~8 words. */
@@ -73,10 +107,19 @@ export function roleLine(lang: Lang, x: XrayState, e: Entity, center: Entity | n
     if (s) return cap(t.mxRoleOf.replace("{0}", s.text).replace("{1}", center.name));
   }
   const d = x.descriptionOf(e.key);
-  return d ? clause(d) : "";
+  if (d) return clause(d);
+  // A named tie to someone else ("Cháu của George Brook"), the most important first.
+  if (e.type === "person") {
+    for (const k of castOrder(x.cast)) {
+      if (k === e.key || k === center?.key) continue;
+      const s = sideOf(x, e.key, k);
+      if (s) return cap(t.mxRoleOf.replace("{0}", s.text).replace("{1}", x.byKey.get(k)?.name ?? k));
+    }
+  }
+  return "";
 }
 
-function Avatar({ e, size = 40 }: { e: Entity; size?: number }) {
+export function Avatar({ e, size = 40 }: { e: Entity; size?: number }) {
   if (e.type !== "person") {
     return (
       <span className="mx-av mx-av--type" style={{ width: size, height: size, ["--c" as string]: TYPE_COLOR[e.type] }} aria-hidden="true">
@@ -141,6 +184,9 @@ function MobileXRayList({ lang, x, bookTitle, onSelect, onOpenGraph, mapLine }: 
   }, [x.ents, x.cast]);
   const matches = query ? x.ents.filter((e) => inTab(e) && e.forms.some((f) => f.toLowerCase().includes(query))) : [];
 
+  const { groups: gs } = useCastGroups(x);
+  const named = gs.filter((g) => g.kind !== "others").map((g) => groupName(lang, x, g));
+  const groupLine = named.length ? t.mxMapGroups.replace("{0}", named.slice(0, 3).join(", ") + (named.length > 3 ? "…" : "")) : null;
   const scope = (x.wholeBook ? t.mxScopeWhole : t.mxScope).replace("{0}", bookTitle ?? "").replace("{1}", String(Math.round(x.here * 100)));
   const ties = links(x.ents, x.limit).length;
 
@@ -235,7 +281,7 @@ function MobileXRayList({ lang, x, bookTitle, onSelect, onOpenGraph, mapLine }: 
             </span>
             <span className="mx-mapcard__main">
               <b>{t.mxMap}</b>
-              <span>{mapLine ?? t.mxMapSub.replace("{0}", String(people.length)).replace("{1}", String(ties))}</span>
+              <span>{mapLine ?? groupLine ?? t.mxMapSub.replace("{0}", String(people.length)).replace("{1}", String(ties))}</span>
             </span>
             <Icon name="chevronDown" size={16} className="mx-right" />
           </button>
@@ -475,6 +521,9 @@ function XRayEditSheet({ lang, x, e, onClose, onSelect }: { lang: Lang; x: XrayS
   const info = x.cast.get(e.key);
   const pinned = x.edits.tiers?.[e.key];
   const others = x.ents.filter((o) => o.key !== e.key && o.type === e.type).slice(0, 120);
+  const { groups: gs } = useCastGroups(x);
+  const moved = x.edits.groups?.[e.key];
+  const autoGroup = moved ? null : gs.find((g) => g.members.includes(e.key));
   const host = document.querySelector<HTMLElement>(".reader") ?? document.body;
 
   const saveName = () => {
@@ -534,6 +583,27 @@ function XRayEditSheet({ lang, x, e, onClose, onSelect }: { lang: Lang; x: XrayS
                       if (v) tiers[e.key] = v as Tier;
                       else delete tiers[e.key];
                       return { ...ed, tiers };
+                    })
+                  }
+                />
+              </div>
+            )}
+            {e.type === "person" && x.cast.get(e.key)?.tier !== "passing" && gs.length > 0 && (
+              <div className="mx-edit__row mx-edit__row--pick">
+                <span>{t.mxGroup}</span>
+                <MobilePicker
+                  label={t.mxGroup}
+                  value={moved ?? ""}
+                  options={[
+                    { value: "", label: autoGroup ? t.mxGroupAuto.replace("{0}", groupName(lang, x, autoGroup)) : t.mxTierAutoBare },
+                    ...gs.filter((g) => g.kind !== "others").map((g) => ({ value: g.id, label: groupName(lang, x, g) })),
+                  ]}
+                  onChange={(v: string) =>
+                    x.setEdits((ed) => {
+                      const next = { ...(ed.groups ?? {}) };
+                      if (v) next[e.key] = v;
+                      else delete next[e.key];
+                      return { ...ed, groups: next };
                     })
                   }
                 />

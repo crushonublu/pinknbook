@@ -20,6 +20,7 @@ import { installFonts } from "../fonts";
 import { type Lang } from "../i18n";
 import { MobileReaderSheet } from "../mobile/MobileReaderSheet";
 import { useXray, XRayPanel } from "../XRay";
+import { MobileRelationMap } from "../MobileRelationMap";
 import { pairKey, type Mention } from "../xrayIndex";
 import { chapterOf, fakeView } from "./xrayFixture";
 
@@ -49,13 +50,14 @@ const AI = {
     [pairKey("Hana Ito", "Mira Vance")]: { label: "cô giáo – học trò", detail: "Hana Ito dạy Mira ở Stanford.", upTo },
     [pairKey("Ian Price", "Mira Vance")]: { label: "nhân viên – sếp", detail: "Ian Price làm cho Mira.", upTo },
     [pairKey("George Brook", "Tyler Brook")]: { label: "ông – cháu", detail: "Tyler là cháu của George.", upTo },
-    [pairKey("Sam Kader", "Tyler Brook")]: { label: "đe doạ – bị đe doạ", detail: "Sam doạ Tyler.", upTo },
+    [pairKey("Sam Kader", "Tyler Brook")]: { label: "kẻ đe doạ – nạn nhân", detail: "Sam doạ Tyler.", upTo },
   },
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 mockIPC((cmd: string): any => {
-  if (cmd === "xray_load") return { idx: null, edits: null, ai: withAi ? JSON.stringify(AI) : null };
+  // Lumen is a company (the offline finder files it as a term).
+  if (cmd === "xray_load") return { idx: null, edits: JSON.stringify({ types: { Lumen: "org" } }), ai: withAi ? JSON.stringify(AI) : null };
   return null;
 });
 
@@ -65,7 +67,8 @@ function Preview() {
   const x = useXray(view, "PREVIEW", true, true, at, ["Nam Phong"]);
   const [sel, setSel] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  const [, setGraph] = useState(q.get("map") === "1");
+  const [graph, setGraph] = useState(q.get("map") === "1");
+  const [mapFocus, setMapFocus] = useState<string | null>(null);
   useEffect(() => {
     if (q.get("whole") === "1") x.setWholeBook(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,7 +99,14 @@ function Preview() {
                 setSel(k);
                 setOpen(null);
               }}
-              onOpenGraph={() => setGraph(true)}
+              onOpenGraph={() => {
+                setMapFocus(null);
+                setGraph(true);
+              }}
+              onFocus={(k) => {
+                setMapFocus(k);
+                setGraph(true);
+              }}
               formatPos={fmt}
               onGo={(m: Mention) => setLog((l) => [`mention ${m[0]}:${m[1]} (${fmt(m[4])})`, ...l])}
               chapterOf={chapterOf}
@@ -104,6 +114,21 @@ function Preview() {
               onOpenMention={setOpen}
             />
           </MobileReaderSheet>
+          {graph && x.ready && (
+            <MobileRelationMap
+              lang={lang}
+              x={x}
+              view={view}
+              title="Ánh Sáng Giả"
+              provider="anthropic"
+              initialFocus={mapFocus}
+              onClose={() => setGraph(false)}
+              onOpenEntity={(k) => {
+                setGraph(false);
+                setSel(k);
+              }}
+            />
+          )}
         </div>
       </div>
     </div>

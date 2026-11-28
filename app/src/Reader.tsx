@@ -27,6 +27,7 @@ import { MobileReaderThemes } from "./mobile/MobileReaderThemes";
 import { acceptReaderSurfaceEvent, watchReaderGestures } from "./mobile/readerGestures";
 import "./mobile/reader.css";
 import "./mobile/xray.css";
+import { MobileRelationMap } from "./MobileRelationMap";
 import { watchTouchSelection } from "./mobile/selection";
 import { useMobileDismiss } from "./mobile/back";
 import { mobileAnnotationStyle, saveMobileAnnotationStyle, mobileBaseColor, type MobileHighlightStyle } from "./mobile/annotationStyle";
@@ -338,6 +339,8 @@ export default function Reader({
 
   // ---- X-Ray --------------------------------------------------------------
   const [xrGraph, setXrGraph] = useState(false);
+  /** Android: who the relationship map opens centred on (null: the groups). */
+  const [xrMapFocus, setXrMapFocus] = useState<string | null>(null);
 
   // ---- Find in book -------------------------------------------------------
   const [search, setSearch] = useState<SearchState>(EMPTY_SEARCH);
@@ -1683,12 +1686,13 @@ export default function Reader({
                   view={viewRef.current}
                   selected={xrSel}
                   onSelect={(k) => { setXrSel(k); setXrOpen(null); }}
-                  onOpenGraph={() => setXrGraph(true)}
+                  onOpenGraph={() => { setXrMapFocus(null); setXrGraph(true); }}
                   formatPos={fmtPos}
                   onGo={(m) => void xrayGo(m, "panel")}
                   chapterOf={chapterOf}
                   openMention={xrOpen}
                   bookTitle={row.title || row.asin}
+                  onFocus={(k) => { setXrMapFocus(k); setXrGraph(true); }}
                   onOpenMention={setXrOpen}
                 />
               ) : undefined
@@ -1768,7 +1772,25 @@ export default function Reader({
         </span>
       </footer>}
 
-      {xrGraph && prefs.xray && xr.ready && (
+      {xrGraph && prefs.xray && xr.ready && isAndroid && (
+        <MobileRelationMap
+          lang={lang}
+          x={xr}
+          view={viewRef.current}
+          title={row.title || row.asin}
+          provider={prefs.aiProvider}
+          initialFocus={xrMapFocus}
+          onClose={() => { setXrGraph(false); setXrMapFocus(null); }}
+          onOpenEntity={(k) => {
+            setXrGraph(false);
+            setXrMapFocus(null);
+            setXrSel(k);
+            setXrOpen(null);
+            setSidebar("xray");
+          }}
+        />
+      )}
+      {xrGraph && prefs.xray && xr.ready && !isAndroid && (
         <XRayGraph
           lang={lang}
           x={xr}

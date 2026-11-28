@@ -187,3 +187,224 @@ export function castOrder(cast: Map<string, CastInfo>): string[] {
     .sort((a, b) => rank[a[1].tier] - rank[b[1].tier] || b[1].score - a[1].score)
     .map(([k]) => k);
 }
+
+// ---- Groups -------------------------------------------------------------------
+
+/** Where a group comes from: the reader, the AI, a family name, the narrator's kin, an organisation, a place, or what is left. */
+export type GroupKind = "user" | "ai" | "family" | "narrator" | "org" | "place" | "others";
+
+export interface CastGroup {
+  /** Stable while the book is read: `family:vance`, `org:<key>`, `place:<key>`, `ai:<name>`, `user:<name>`, `narrator`, `others`. */
+  id: string;
+  kind: GroupKind;
+  /** The family name, organisation or place, or the name the AI or the reader gave. */
+  label: string;
+  /** Entity keys, most important first. */
+  members: string[];
+}
+
+export interface GroupOptions {
+  /** Entity key → group id the reader moved them to (over everything else). */
+  assign?: Record<string, string>;
+  /** Entity key → group name the AI gave. */
+  ai?: Map<string, string>;
+  /** The person the story turns around (groups are ranked by their ties to them). */
+  center?: string | null;
+  /** The kind of tie between two people (from labels), to bring in-laws into a family. */
+  kindOf?: (a: string, b: string) => string;
+  /** At most this many groups besides "others". */
+  max?: number;
+}
+
+/** A group needs this many chunks shared with an organisation, and this share of the person's own. */
+const ORG_SHARED = 3;
+const ORG_SHARE = 0.3;
+export const MAX_GROUPS = 6;
+
+/** The words of a name, without brackets ("Đinh Huy (bố tôi)" → Đinh, Huy). */
+export function nameParts(name: string): string[] {
+  return name
+    .replace(/\([^)]*\)/g, " ")
+    .split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}\p{M}’'-]/gu, ""))
+    .filter((w) => w.length > 1);
+}
+
+/**
+ * The people of the story so far (main and minor, no author), in groups: the
+ * AI's, then families (people sharing a family name who appear together; the
+ * narrator with the kin they name), then organisations someone appears with
+ * often, then clusters of people who appear together, named after the place
+ * or organisation they share; the reader's moves win over all of it. Groups
+ * of one go to "others"; at most `max` groups, the ones closest to the
+ * center. Same input, same groups.
+ */
+export function groups(ents: Entity[], links: Link[], cast: Map<string, CastInfo>, limit: number, opts: GroupOptions = {}): CastGroup[] {
+  const max = opts.max ?? MAX_GROUPS;
+  const people = ents
+    .filter((e) => {
+      const c = cast.get(e.key);
+      return e.type === "person" && c && !c.author && c.tier !== "passing";
+    })
+    .sort((a, b) => cast.get(b.key)!.score - cast.get(a.key)!.score || (a.key < b.key ? -1 : 1));
+  const rank = new Map(people.map((e, i) => [e.key, i]));
+  const chunks = (e: Entity) => new Set(upTo(e.mentions, limit).map((m) => m[3]));
+  const pc = new Map(people.map((e) => [e.key, chunks(e)]));
+  const weights = new Map(links.map((l) => [l.key, l.chunks.length]));
+  const weight = (a: string, b: string) => weights.get(a < b ? `${a}\u0001${b}` : `${b}\u0001${a}`) ?? 0;
+
+  const out = new Map<string, CastGroup>();
+  const where = new Map<string, string>();
+  const put = (id: string, kind: GroupKind, label: string, key: string) => {
+    const old = where.get(key);
+    if (old) {
+      const g = out.get(old)!;
+      g.members = g.members.filter((k) => k !== key);
+    }
+    let g = out.get(id);
+    if (!g) out.set(id, (g = { id, kind, label, members: [] }));
+    g.members.push(key);
+    where.set(key, id);
+  };
+  const free = () => people.filter((e) => !where.has(e.key));
+
+  // The AI's groups.
+  for (const e of people) {
+    const g = opts.ai?.get(e.key)?.trim();
+    if (g) put(`ai:${g.toLocaleLowerCase()}`, "ai", g, e.key);
+  }
+
+  // Families: the family name is the first word (Vietnamese, Chinese, Korean
+  // names) or the last (most others); the book's names say which.
+  // The fullest name each goes by ("Tyler Brook", even when shown as "Tyler").
+  const fullest = (e: Entity) => [e.name, ...e.forms].map(nameParts).sort((a, b) => b.length - a.length)[0];
+  const multi = free().filter((e) => fullest(e).length >= 2);
+  const byWord = (pick: (w: string[]) => string) => {
+    const m = new Map<string, Entity[]>();
+    for (const e of multi) {
+      const w = pick(fullest(e)).toLocaleLowerCase();
+      (m.get(w) ?? m.set(w, []).get(w)!).push(e);
+    }
+    return m;
+  };
+  // How many people a reading of the names puts with someone of the same name they appear with.
+  const shared = (m: Map<string, Entity[]>) =>
+    [...m.values()].reduce((n, v) => n + v.filter((e) => v.some((o) => o !== e && weight(e.key, o.key) > 0)).length, 0);
+  const first = byWord((w) => w[0]);
+  const last = byWord((w) => w[w.length - 1]);
+  const families = shared(first) > shared(last) ? first : last;
+  for (const [word, fam] of [...families.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    if (fam.length < 2) continue;
+    // Only those who appear with another of the same name.
+    const kept = fam.filter((e) => fam.some((o) => o !== e && weight(e.key, o.key) > 0));
+    if (kept.length < 2) continue;
+    const label = fullest(kept[0]).find((w) => w.toLocaleLowerCase() === word) ?? word;
+    for (const e of kept) put(`family:${word}`, "family", label, e.key);
+  }
+  // The narrator and the kin they name ("bố tôi").
+  const narrator = people.find((e) => e.narrator);
+  if (narrator) {
+    const kin = people.filter((e) => e.kin && !e.narrator && !where.has(e.key));
+    if (kin.length) {
+      const own = where.get(narrator.key);
+      const id = own?.startsWith("family:") ? own : "narrator";
+      if (id === "narrator") put(id, "narrator", narrator.name, narrator.key);
+      const g = out.get(id)!;
+      for (const e of kin) put(id, g.kind, g.label, e.key);
+    }
+  }
+  // In-laws and others the labels call family join the family they are tied to.
+  if (opts.kindOf) {
+    for (const e of free()) {
+      const fams = [...out.values()].filter((g) => g.kind === "family" || g.kind === "narrator");
+      const best = fams
+        .map((g) => ({ g, w: g.members.reduce((n, k) => n + (opts.kindOf!(e.key, k) === "family" ? weight(e.key, k) || 1 : 0), 0) }))
+        .filter((v) => v.w > 0)
+        .sort((a, b) => b.w - a.w || (a.g.id < b.g.id ? -1 : 1))[0];
+      if (best) put(best.g.id, best.g.kind, best.g.label, e.key);
+    }
+  }
+
+  // Organisations someone appears with often.
+  const orgs = ents.filter((e) => e.type === "org").map((o) => ({ o, cs: chunks(o) }));
+  for (const e of free()) {
+    const mine = pc.get(e.key)!;
+    let best: { o: Entity; r: number } | null = null;
+    for (const { o, cs } of orgs) {
+      let n = 0;
+      for (const c of mine) if (cs.has(c)) n++;
+      const r = n / Math.max(1, mine.size);
+      if (n >= ORG_SHARED && r >= ORG_SHARE && (!best || r > best.r)) best = { o, r };
+    }
+    if (best) put(`org:${best.o.key}`, "org", best.o.name, e.key);
+  }
+
+  // Clusters among the rest: who appears with whom (label propagation, in a fixed order).
+  const rest = free();
+  const label = new Map(rest.map((e) => [e.key, e.key]));
+  for (let round = 0; round < 20; round++) {
+    let moved = false;
+    for (const e of rest) {
+      const score = new Map<string, number>();
+      for (const o of rest) {
+        if (o === e) continue;
+        const w = weight(e.key, o.key);
+        const l = label.get(o.key)!;
+        if (w > 0) score.set(l, (score.get(l) ?? 0) + w);
+      }
+      let pick = label.get(e.key)!;
+      let top = score.get(pick) ?? 0;
+      for (const [l, w] of [...score.entries()].sort((a, b) => rank.get(a[0])! - rank.get(b[0])!)) {
+        if (w > top) {
+          pick = l;
+          top = w;
+        }
+      }
+      if (pick !== label.get(e.key)) {
+        label.set(e.key, pick);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  const clusters = new Map<string, Entity[]>();
+  for (const e of rest) {
+    const l = label.get(e.key)!;
+    (clusters.get(l) ?? clusters.set(l, []).get(l)!).push(e);
+  }
+  const anchors = ents.filter((e) => e.type === "place" || e.type === "org").map((a) => ({ a, cs: chunks(a) }));
+  for (const members of clusters.values()) {
+    if (members.length < 2) continue;
+    // Named after the place or organisation its people appear with most.
+    let best: { a: Entity; n: number } | null = null;
+    for (const { a, cs } of anchors) {
+      let n = 0;
+      for (const e of members) for (const c of pc.get(e.key)!) if (cs.has(c)) n++;
+      if (n >= ORG_SHARED * members.length && (!best || n > best.n || (n === best.n && a.key < best.a.key))) best = { a, n };
+    }
+    if (!best) continue;
+    const kind: GroupKind = best.a.type === "org" ? "org" : "place";
+    for (const e of members) put(`${kind}:${best.a.key}`, kind, best.a.name, e.key);
+  }
+
+  // The reader's moves win over everything.
+  for (const [key, id] of Object.entries(opts.assign ?? {})) {
+    if (!rank.has(key)) continue;
+    const at = id.indexOf(":");
+    const prefix = at > 0 ? id.slice(0, at) : id;
+    const known = out.get(id);
+    const kind: GroupKind = known?.kind ?? (["family", "org", "place", "ai", "narrator"].includes(prefix) ? (prefix as GroupKind) : "user");
+    put(id, kind, known?.label ?? (at > 0 ? id.slice(at + 1) : id), key);
+  }
+
+  // Groups of one go to "others" (not the reader's own); keep the groups closest to the center.
+  const tie = (g: CastGroup) => (opts.center ? g.members.reduce((n, k) => n + (k === opts.center ? 0 : weight(k, opts.center!)), 0) : 0);
+  const real = [...out.values()].filter((g) => g.members.length >= 2 || (g.kind === "user" && g.members.length > 0));
+  real.sort((a, b) => tie(b) - tie(a) || b.members.length - a.members.length || (a.id < b.id ? -1 : 1));
+  const kept = real.slice(0, max);
+  const keptIds = new Set(kept.map((g) => g.id));
+  const others: CastGroup = { id: "others", kind: "others", label: "", members: [] };
+  for (const e of people) if (!keptIds.has(where.get(e.key) ?? "")) others.members.push(e.key);
+  for (const g of kept) g.members.sort((a, b) => rank.get(a)! - rank.get(b)!);
+  return others.members.length ? [...kept, others] : kept;
+}

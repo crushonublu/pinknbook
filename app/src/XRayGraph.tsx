@@ -709,7 +709,7 @@ function PersonPanel({
 }
 
 /** A tie picked on the map: the label (editable), the AI's reason, the passages behind it. */
-function EdgePanel({
+export function EdgePanel({
   lang,
   x,
   view,
@@ -861,7 +861,7 @@ function trimPassage(s: string, names: string[]): string {
 }
 
 /** "Label with AI": build the job from what is new since last time, show the cost, send. */
-function AiButton({
+export function AiButton({
   lang,
   x,
   view,
