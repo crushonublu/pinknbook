@@ -135,7 +135,9 @@ pub fn secret_remove(name: &str) -> Result<(), String> {
 
 }
 #[cfg(not(target_os = "android"))]
-pub use desktop::{save, load, clear, secret_get, secret_put, secret_remove};
+pub use desktop::{secret_get, secret_put, secret_remove};
+#[cfg(not(target_os = "android"))]
+use desktop as store;
 
 #[cfg(target_os = "android")]
 mod android {
@@ -194,4 +196,67 @@ mod android {
     pub fn secret_remove(name: &str) -> Result<(), String> { store("remove", name, None).map(|_| ()) }
 }
 #[cfg(target_os = "android")]
-pub use android::{save, load, clear, secret_get, secret_put, secret_remove};
+pub use android::{secret_get, secret_put, secret_remove};
+#[cfg(target_os = "android")]
+use android as store;
+
+// ---- Signed out, device kept ---------------------------------------------------
+//
+// Signing out used to drop the device's keys, so every later sign-in registered
+// one more device on the Amazon account. Now signing out can keep them, marked
+// "parked": the app is signed out (`load` sees nothing), and signing in again
+// on this computer or phone brings the same device back without a new
+// registration. `clear` forgets them for good.
+
+use crate::adp::register::Credentials;
+
+const PARKED: &str = "adp-parked";
+
+fn is_parked() -> Result<bool, String> {
+    Ok(secret_get(PARKED)?.as_deref() == Some("1"))
+}
+
+/// Store a fresh registration (it replaces any kept device).
+pub fn save(creds: &Credentials) -> Result<(), String> {
+    store::save(creds)?;
+    secret_remove(PARKED)
+}
+
+/// The signed-in device, if any (a kept, signed-out one does not count).
+pub fn load() -> Result<Option<Credentials>, String> {
+    if is_parked()? {
+        return Ok(None);
+    }
+    store::load()
+}
+
+/// Sign out but keep this device's keys, to sign in again without registering anew.
+pub fn park() -> Result<(), String> {
+    if store::load()?.is_some() {
+        secret_put(PARKED, "1")?;
+    }
+    Ok(())
+}
+
+/// The device kept at sign-out, if any.
+pub fn parked() -> Result<Option<Credentials>, String> {
+    if !is_parked()? {
+        return Ok(None);
+    }
+    store::load()
+}
+
+/// Sign in again with the kept device.
+pub fn unpark() -> Result<Option<Credentials>, String> {
+    let c = parked()?;
+    if c.is_some() {
+        secret_remove(PARKED)?;
+    }
+    Ok(c)
+}
+
+/// Forget this device's keys entirely.
+pub fn clear() -> Result<(), String> {
+    store::clear()?;
+    secret_remove(PARKED)
+}

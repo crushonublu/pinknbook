@@ -35,6 +35,33 @@ pub struct PendingRegistration {
     pub verifier: String,
     /// hex(serial "#" device_type) — the register-side client_id.
     pub client_id: String,
+    /// What the device is called on the Amazon account (see `device_name`).
+    #[serde(default)]
+    pub device_name: String,
+}
+
+/// The name this app registers under when the reader gives none.
+pub fn default_device_name() -> &'static str {
+    if cfg!(target_os = "android") {
+        "pntome Android"
+    } else {
+        "pntome PC"
+    }
+}
+
+/// The name for a new registration: the reader's (or the platform default),
+/// tidied and cut to 40 characters, then a short piece of the serial, since
+/// Amazon refuses a name already on the account ("pntome Android (7Kq2)").
+pub fn device_name(wanted: Option<&str>, serial: &str) -> String {
+    let base: String = wanted
+        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| default_device_name().to_string())
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(40)
+        .collect();
+    format!("{} ({})", base.trim(), &serial[..4])
 }
 
 /// The credential bundle minted by a successful registration.
@@ -59,8 +86,10 @@ fn random_serial() -> String {
 }
 
 /// Build the Amazon sign-in URL and the pending state to carry into `register`.
-pub fn build_login_url(device_type: &str) -> (String, PendingRegistration) {
+/// `name`: what to call the device on the account (None: the platform default).
+pub fn build_login_url(device_type: &str, name: Option<&str>) -> (String, PendingRegistration) {
     let serial = random_serial();
+    let device_name = device_name(name, &serial);
     let verifier = b64url_nopad(&rand::random::<[u8; 32]>());
     let challenge = b64url_nopad(&Sha256::digest(verifier.as_bytes()));
     let client_id_hex = hex::encode(format!("{serial}#{device_type}"));
@@ -107,6 +136,7 @@ pub fn build_login_url(device_type: &str) -> (String, PendingRegistration) {
             device_type: device_type.to_string(),
             verifier,
             client_id: client_id_hex,
+            device_name,
         },
     )
 }
@@ -126,7 +156,7 @@ pub async fn register(
     pending: &PendingRegistration,
     code: &str,
 ) -> Result<Credentials, AdpError> {
-    let device_name = format!("pinknbook {}", &pending.serial[..6]); // unique → avoids DuplicateDeviceName
+    let device_name = if pending.device_name.is_empty() { device_name(None, &pending.serial) } else { pending.device_name.clone() };
     let body = serde_json::json!({
         "requested_token_type": ["bearer", "mac_dms", "website_cookies", "store_authentication_cookie"],
         "cookies": {"website_cookies": [], "domain": ".amazon.com"},
@@ -228,7 +258,7 @@ mod tests {
 
     #[test]
     fn login_url_uses_device_prefix_and_hex_client_id() {
-        let (url, pending) = build_login_url(DEVICE_TYPE);
+        let (url, pending) = build_login_url(DEVICE_TYPE, None);
         assert!(url.contains("openid.oa2.client_id=device%3A"));
         assert_eq!(pending.serial.len(), 40);
         // register client_id = hex(serial#device_type), no "device:" prefix
@@ -247,5 +277,16 @@ mod tests {
     fn finds_directed_id_fallback() {
         let v = serde_json::json!({"a": {"b": "amzn1.account.AFQDXYZ123"}});
         assert_eq!(find_account_id(&v).as_deref(), Some("amzn1.account.AFQDXYZ123"));
+    }
+
+    #[test]
+    fn device_names_say_app_and_platform() {
+        let serial = "Ab12xyzxyzxyzxyzxyzxyzxyzxyzxyzxyzxyzxyz";
+        assert_eq!(device_name(None, serial), format!("{} (Ab12)", default_device_name()));
+        assert_eq!(device_name(Some("  Máy   đọc  của Hiếu "), serial), "Máy đọc của Hiếu (Ab12)");
+        assert_eq!(device_name(Some("   "), serial), format!("{} (Ab12)", default_device_name()));
+        assert_eq!(device_name(Some(&"x".repeat(80)), serial).chars().count(), 40 + " (Ab12)".len());
+        let (_, pending) = build_login_url(DEVICE_TYPE, Some("Kệ sách"));
+        assert!(pending.device_name.starts_with("Kệ sách ("));
     }
 }

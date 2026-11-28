@@ -78,6 +78,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::auth_status,
+            commands::saved_device,
+            commands::resume_login,
+            commands::forget_saved_device,
+            commands::default_device_name,
             commands::login,
             commands::complete_mobile_login,
             commands::cancel_mobile_login,

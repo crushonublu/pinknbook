@@ -18,24 +18,61 @@ use crate::db::{Db, LibraryRow};
 pub struct AccountInfo {
     pub directed_id: String,
     pub device_name: String,
+    /// This install's device on the account (to tell it in Amazon's list).
+    pub device_serial: String,
+}
+
+impl From<register::Credentials> for AccountInfo {
+    fn from(c: register::Credentials) -> Self {
+        AccountInfo { directed_id: c.directed_id, device_name: c.device_name, device_serial: c.device_serial }
+    }
 }
 
 /// Is a credential bundle present, and for which account?
 #[tauri::command]
 pub fn auth_status() -> Result<Option<AccountInfo>, String> {
-    Ok(creds::load()?.map(|c| AccountInfo {
-        directed_id: c.directed_id,
-        device_name: c.device_name,
-    }))
+    Ok(creds::load()?.map(AccountInfo::from))
+}
+
+/// The device kept when signing out (sign in again with it, no new registration).
+#[tauri::command]
+pub fn saved_device() -> Result<Option<AccountInfo>, String> {
+    Ok(creds::parked()?.map(AccountInfo::from))
+}
+
+/// Sign in again with the device kept at sign-out.
+#[tauri::command]
+pub fn resume_login(app: AppHandle) -> Result<AccountInfo, String> {
+    let c = creds::unpark()?.ok_or("No saved device")?;
+    let db: State<Db> = app.state();
+    db.save_account(&c.directed_id, register::MARKETPLACE, &c.device_serial, &c.device_type, &c.device_name)
+        .map_err(|e| e.to_string())?;
+    crate::stats::set_setting(&db, GUEST_KEY, "0")?;
+    Ok(AccountInfo::from(c))
+}
+
+/// Forget the device kept at sign-out (it stays on the Amazon account until removed there).
+#[tauri::command]
+pub fn forget_saved_device() -> Result<(), String> {
+    if creds::parked()?.is_some() {
+        creds::clear()?;
+    }
+    Ok(())
+}
+
+/// The name a new device gets when the reader gives none.
+#[tauri::command]
+pub fn default_device_name() -> String {
+    register::default_device_name().to_string()
 }
 
 /// Open the Amazon sign-in window and register a fresh device on success.
 /// Emits `login-complete` (AccountInfo) or `login-error` (String) when done.
 #[tauri::command]
-pub async fn login(app: AppHandle, title: Option<String>, note: Option<String>) -> Result<(), String> {
+pub async fn login(app: AppHandle, title: Option<String>, note: Option<String>, device_name: Option<String>) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        let (url, pending) = register::build_login_url(register::DEVICE_TYPE);
+        let (url, pending) = register::build_login_url(register::DEVICE_TYPE, device_name.as_deref());
         *app.state::<MobileLogin>().0.lock().map_err(|_| "Sign-in state unavailable")? = Some(pending);
         let result = android_activity(&app, Some((url,
             title.unwrap_or_else(|| "Sign in with Amazon".into()),
@@ -47,10 +84,12 @@ pub async fn login(app: AppHandle, title: Option<String>, note: Option<String>) 
     #[cfg(not(target_os = "android"))]
     let _ = (title, note);
     #[cfg(all(mobile, not(target_os = "android")))]
+    let _ = device_name;
+    #[cfg(all(mobile, not(target_os = "android")))]
     { let _ = app; return Err("Sign-in is not available on this platform".into()); }
     #[cfg(desktop)]
     {
-        let (url, pending) = register::build_login_url(register::DEVICE_TYPE);
+        let (url, pending) = register::build_login_url(register::DEVICE_TYPE, device_name.as_deref());
         let parsed: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
 
         let done = Arc::new(AtomicBool::new(false));
@@ -104,10 +143,7 @@ async fn complete_login(app: AppHandle, pending: register::PendingRegistration, 
             &creds_bundle.device_name,
         )
         .map_err(|e| e.to_string())?;
-        Ok(AccountInfo {
-            directed_id: creds_bundle.directed_id,
-            device_name: creds_bundle.device_name,
-        })
+        Ok(AccountInfo::from(creds_bundle))
     }
     .await;
 
@@ -187,23 +223,32 @@ async fn android_activity(app: &AppHandle, signin: Option<(String, String, Strin
 
 /// Sign out of Amazon. The app then carries on as a guest. With
 /// `clear_kindle`, the Kindle books and their downloaded files are taken off
-/// this computer too; books added from this computer always stay.
+/// this computer too; books added from this computer always stay. Unless
+/// `forget`, this device's keys are kept (signed out) so signing in again
+/// does not register one more device on the account.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-pub fn logout(app: AppHandle, clear_kindle: Option<bool>) -> Result<(), String> {
-    finish_logout(app, clear_kindle)
+pub fn logout(app: AppHandle, clear_kindle: Option<bool>, forget: Option<bool>) -> Result<(), String> {
+    finish_logout(app, clear_kindle, forget)
 }
 
 #[cfg(target_os = "android")]
 #[tauri::command]
-pub async fn logout(app: AppHandle, clear_kindle: Option<bool>) -> Result<(), String> {
+pub async fn logout(app: AppHandle, clear_kindle: Option<bool>, forget: Option<bool>) -> Result<(), String> {
     app.state::<MobileLogin>().0.lock().map_err(|_| "Sign-in state unavailable")?.take();
-    android_activity(&app, None).await?;
-    finish_logout(app, clear_kindle)
+    // The web session (days read on Amazon) goes with the device, not with a sign-out that keeps it.
+    if forget == Some(true) {
+        android_activity(&app, None).await?;
+    }
+    finish_logout(app, clear_kindle, forget)
 }
 
-fn finish_logout(app: AppHandle, clear_kindle: Option<bool>) -> Result<(), String> {
-    creds::clear()?;
+fn finish_logout(app: AppHandle, clear_kindle: Option<bool>, forget: Option<bool>) -> Result<(), String> {
+    if forget == Some(true) {
+        creds::clear()?;
+    } else {
+        creds::park()?;
+    }
     let db: State<Db> = app.state();
     crate::stats::set_setting(&db, GUEST_KEY, "1")?;
     if clear_kindle == Some(true) {

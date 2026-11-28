@@ -18,6 +18,7 @@ export function AccountMenu({
   guest,
   onSignOut,
   onSignIn,
+  onDevices,
   onLocalLibrary,
   checkState,
   onCheckUpdate,
@@ -31,6 +32,8 @@ export function AccountMenu({
   guest?: boolean;
   onSignOut?: () => void;
   onSignIn?: () => void;
+  /** Open this app's devices on the Amazon account. */
+  onDevices?: () => void;
   /** Open "Books on this computer" (space, watched folders, export). */
   onLocalLibrary?: () => void;
   checkState: CheckState;
@@ -189,6 +192,19 @@ export function AccountMenu({
           {onSignOut && (
             <>
               <div className="menu__sep" />
+              {onDevices && (
+                <button
+                  className="menu__item"
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    onDevices();
+                  }}
+                >
+                  <Icon name="monitor" size={17} />
+                  {t.devTitle}
+                </button>
+              )}
               <button
                 className="menu__item"
                 role="menuitem"

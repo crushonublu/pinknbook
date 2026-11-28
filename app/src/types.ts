@@ -1,6 +1,8 @@
 export interface AccountInfo {
   directed_id: string;
   device_name: string;
+  /** This install's device on the Amazon account. */
+  device_serial?: string;
 }
 
 export interface LibraryRow {

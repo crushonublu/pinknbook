@@ -22,8 +22,9 @@ use crate::creds;
 const KD_HOST: &str = "kd.amazon.com";
 /// Send to Kindle's own size limit for documents.
 pub const MAX_BYTES: u64 = 200 * 1024 * 1024;
-/// Device names this app gives its own registrations ("pinknbook ABC123").
-const APP_DEVICE_PREFIX: &str = "pinknbook ";
+/// Device names this app gives its own registrations: "pntome Android (7Kq2)",
+/// and "pinknbook ABC123" before 0.6.
+const APP_DEVICE_PREFIXES: [&str; 2] = ["pntome ", "pinknbook "];
 
 // ---- EPUB -------------------------------------------------------------------
 
@@ -487,10 +488,13 @@ pub struct StkDevice {
     pub serial: String,
     /// One of this app's own registrations (hidden by default).
     pub app_made: bool,
+    /// This install's own registration.
+    pub this_device: bool,
 }
 
 #[tauri::command]
 pub async fn stk_devices() -> Result<Vec<StkDevice>, String> {
+    let mine = creds::load()?.map(|c| c.device_serial).unwrap_or_default();
     let v = kd_post("/import/kindle-doc/get-device-list", json!({})).await?;
     Ok(v["ownedDevices"]
         .as_array()
@@ -498,9 +502,11 @@ pub async fn stk_devices() -> Result<Vec<StkDevice>, String> {
             a.iter()
                 .filter_map(|d| {
                     let name = d["deviceName"].as_str()?.to_string();
+                    let serial = d["deviceSerialNumber"].as_str()?.to_string();
                     Some(StkDevice {
-                        app_made: name.starts_with(APP_DEVICE_PREFIX),
-                        serial: d["deviceSerialNumber"].as_str()?.to_string(),
+                        app_made: APP_DEVICE_PREFIXES.iter().any(|p| name.starts_with(p)),
+                        this_device: !mine.is_empty() && serial == mine,
+                        serial,
                         name,
                     })
                 })

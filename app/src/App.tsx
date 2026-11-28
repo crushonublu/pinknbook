@@ -34,6 +34,7 @@ import {
   LogoutDialog,
   useLocalImport,
 } from "./LocalImport";
+import { AmazonDevicesDialog, SignInDialog } from "./DeviceDialogs";
 import { BadgeToasts, StatsPage, StreakButton, useStats } from "./Stats";
 import type { WrapSummary } from "./stats/types";
 import { WrapOffers } from "./wrap/WrapOffers";
@@ -113,6 +114,10 @@ export default function App() {
 
   // Send to Kindle: the queue outlives the dialog.
   const [showSend, setShowSend] = useState(false);
+  /** Before signing in: the kept device, or a new one with a name. */
+  const [askSignIn, setAskSignIn] = useState(false);
+  /** This app's devices on the Amazon account. */
+  const [showDevices, setShowDevices] = useState(false);
   const [dragging, setDragging] = useState(false);
   const sendQueue = useSendQueue(() => {
     refreshLibrary().catch(() => undefined);
@@ -347,13 +352,34 @@ export default function App() {
     invoke("enrich_library").catch(() => undefined);
   }
 
-  async function doLogin() {
+  /** Sign in: first choose the device (the one kept at sign-out, or a new one with a name). */
+  function doLogin() {
+    setError(null);
+    setAskSignIn(true);
+  }
+
+  async function loginNew(deviceName: string) {
+    setAskSignIn(false);
     setError(null);
     setBusy(t.signingIn);
     try {
-      await invoke("login", isAndroid ? { title: t.signIn, note: t.mobileSignInNote } : undefined);
+      await invoke("login", { ...(isAndroid ? { title: t.signIn, note: t.mobileSignInNote } : {}), deviceName: deviceName || null });
     } catch (e) {
       setBusy(null);
+      setError(String(e));
+    }
+  }
+
+  /** Sign in again as the device kept at sign-out: no Amazon page, no new device. */
+  async function loginResume() {
+    setAskSignIn(false);
+    setError(null);
+    try {
+      const info = await invoke<AccountInfo>("resume_login");
+      setAccount(info);
+      setAuth("in");
+      await startSync();
+    } catch (e) {
       setError(String(e));
     }
   }
@@ -376,10 +402,10 @@ export default function App() {
     }
   }
 
-  async function doLogout(clearKindle: boolean) {
+  async function doLogout(clearKindle: boolean, forget: boolean) {
     setAskLogout(false);
     try {
-      await invoke("logout", { clearKindle });
+      await invoke("logout", { clearKindle, forget });
     } catch (e) {
       setError(String(e));
     }
@@ -506,7 +532,7 @@ export default function App() {
   const detailRow = detailAsin ? library.find((r) => r.asin === detailAsin) ?? null : null;
   const detailTwinAsin = detailRow?.source === "local" ? (detailRow.linked_asin ?? detailRow.kindle_match) : null;
   const detailTwin = detailTwinAsin ? library.find((r) => r.asin === detailTwinAsin) ?? null : null;
-  const mobileBlocked = !!(detailRow || editing || removing || kindlePush || askLogout || showLocalLib || showSend);
+  const mobileBlocked = !!(detailRow || editing || removing || kindlePush || askLogout || showLocalLib || showSend || askSignIn || showDevices);
   // A status filter ("See all" on a shelf) is a flat collection, never shelves.
   const effectiveView: LibraryView = (statusFilter || onlyMatches) && view === "shelves" ? "grid" : view;
 
@@ -661,6 +687,7 @@ export default function App() {
           guest={auth === "guest"}
           onSignOut={auth === "in" ? () => setAskLogout(true) : undefined}
           onSignIn={auth === "guest" ? doLogin : undefined}
+          onDevices={auth === "in" ? () => setShowDevices(true) : undefined}
           onLocalLibrary={hasLib ? () => setShowLocalLib(true) : undefined}
           checkState={updater.checkState}
           onCheckUpdate={updater.checkNow}
@@ -753,7 +780,7 @@ export default function App() {
         <MobileAccount
           lang={lang} setLang={setLang} theme={theme} setTheme={setTheme}
           goal={stats.summary?.goal_minutes ?? 10} onChanged={stats.refresh}
-          onLocalLibrary={() => setShowLocalLib(true)} onSendToKindle={() => setShowSend(true)} deviceName={account?.device_name}
+          onLocalLibrary={() => setShowLocalLib(true)} onSendToKindle={() => setShowSend(true)} onDevices={() => setShowDevices(true)} deviceName={account?.device_name}
           signedIn={auth === "in"} busy={!!busy} onSignIn={doLogin} onSignOut={() => setAskLogout(true)}
         />
       )}
@@ -957,6 +984,8 @@ export default function App() {
         />
       )}
       {askLogout && <LogoutDialog lang={lang} onClose={() => setAskLogout(false)} onConfirm={doLogout} />}
+      {askSignIn && <SignInDialog lang={lang} onClose={() => setAskSignIn(false)} onResume={loginResume} onNew={loginNew} />}
+      {showDevices && auth === "in" && <AmazonDevicesDialog lang={lang} onClose={() => setShowDevices(false)} />}
       {removing && (
         <ConfirmDialog
           lang={lang}

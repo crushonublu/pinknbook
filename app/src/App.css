@@ -2116,6 +2116,41 @@ button.gr__name:hover { text-decoration: underline; }
 .choice__opt > span { display: flex; flex-direction: column; gap: 2px; }
 .choice__name { font-size: 14px; font-weight: 600; }
 .choice__sub { line-height: 1.45; }
+.choice__keep { display: flex; gap: 10px; align-items: flex-start; margin-top: 12px; padding: 0 2px; cursor: pointer; }
+.choice__keep input { accent-color: var(--accent); margin: 3px 0 0; }
+.choice__keep > span { display: flex; flex-direction: column; gap: 2px; }
+
+/* Signing in as a device; this app's devices on the Amazon account. */
+.devd { display: flex; flex-direction: column; gap: 10px; }
+.devd .kpush__title { margin-bottom: 2px; }
+.devd .kpush__actions { margin-top: 8px; }
+.devd__saved {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-align: left; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--border)); border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); color: var(--text); font: inherit;
+}
+.devd__saved .icon { color: var(--accent); flex: none; }
+.devd__saved > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.devd__saved b { font-size: 15px; }
+.devd__saved small { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.devd__other { align-self: flex-start; padding: 6px 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; cursor: pointer; }
+.devd__name { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.devd__name input {
+  min-height: 42px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: 15px;
+}
+.devd__name input:focus { outline: none; border-color: var(--accent); }
+.devd__name small { font-size: 12px; line-height: 1.45; }
+.devd__warn { margin: 0; font-size: 12.5px; line-height: 1.5; color: #ffb37a; }
+.devd--list { max-height: min(640px, calc(100dvh - 48px)); }
+.devd__list { list-style: none; margin: 0; padding: 0; min-height: 0; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; }
+.devd__list li { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; font-size: 14px; }
+.devd__list li + li { border-top: 1px solid var(--border); }
+.devd__list li .icon { flex: none; color: var(--muted); }
+.devd__list li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.devd__list li.is-this .icon { color: var(--accent); }
+.devd__list li b { flex: none; font-size: 12px; padding: 2px 8px; border-radius: 999px; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.devd__hint { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); }
 .detail__local { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 14px; }
 .linkbtn--danger:hover { color: #ff9ea1; }
 @media (prefers-reduced-motion: reduce) { .imptoast { animation: none; } }

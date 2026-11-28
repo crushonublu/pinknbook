@@ -486,10 +486,12 @@ export function LogoutDialog({
 }: {
   lang: Lang;
   onClose: () => void;
-  onConfirm: (clearKindle: boolean) => void;
+  /** `forget`: drop this device's keys too (else they are kept to sign in again without a new device). */
+  onConfirm: (clearKindle: boolean, forget: boolean) => void;
 }) {
   const t = STR[lang];
   const [clear, setClear] = useState(false);
+  const [keep, setKeep] = useState(true);
   return (
     <div className="modal" onMouseDown={onClose}>
       <div
@@ -517,11 +519,18 @@ export function LogoutDialog({
             </label>
           ))}
         </div>
+        <label className="choice__keep">
+          <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />
+          <span>
+            <span className="choice__name">{t.devKeep}</span>
+            <span className="choice__sub small muted">{keep ? t.devKeepSub : t.devForgetSub}</span>
+          </span>
+        </label>
         <div className="kpush__actions">
           <button className="btn" onClick={onClose} autoFocus>
             {t.cancel}
           </button>
-          <button className="btn btn--primary" onClick={() => onConfirm(clear)}>
+          <button className="btn btn--primary" onClick={() => onConfirm(clear, !keep)}>
             {t.signOut}
           </button>
         </div>
