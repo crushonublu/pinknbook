@@ -815,7 +815,10 @@ interface Estimate {
   model: string;
 }
 interface RunResult {
-  result: { people?: { id: string; description: string; same_as?: string }[]; pairs?: { id: string; label: string; detail: string }[] };
+  result: {
+    people?: { id: string; description: string; same_as?: string; role?: string; caption?: string; group?: string }[];
+    pairs?: { id: string; label: string; detail: string }[];
+  };
   cost_usd: number;
 }
 
@@ -999,6 +1002,8 @@ export function AiButton({
         }
         spent += res.cost_usd;
         const people = (res.result.people ?? []).filter((p) => ids.has(p.id) && p.description?.trim());
+        const ROLES = ["main", "supporting", "minor", "not_a_character"] as const;
+        const isRole = (r: unknown): r is (typeof ROLES)[number] => ROLES.includes(r as (typeof ROLES)[number]);
         const pairs = (res.result.pairs ?? []).filter((p) => ids.has(p.id) && p.label?.trim());
         nd += people.length;
         nl += pairs.length;
@@ -1012,8 +1017,26 @@ export function AiButton({
         const suggest = onSame(same);
         // Save each batch as it comes, so a later failure keeps what was done.
         x.setAi((ai) => {
-          const next = { ...ai, upTo: Math.max(ai.upTo, limit), provider, descriptions: { ...ai.descriptions }, labels: { ...ai.labels } };
-          for (const p of people) next.descriptions[ids.get(p.id)!] = { text: p.description.trim(), upTo: limit, lang };
+          const next = {
+            ...ai,
+            upTo: Math.max(ai.upTo, limit),
+            provider,
+            descriptions: { ...ai.descriptions },
+            labels: { ...ai.labels },
+            roles: { ...(ai.roles ?? {}) },
+            captions: { ...(ai.captions ?? {}) },
+            groups: { ...(ai.groups ?? {}) },
+          };
+          for (const p of people) {
+            const k = ids.get(p.id)!;
+            next.descriptions[k] = { text: p.description.trim(), upTo: limit, lang };
+            // How much they matter, the line under their name and their group (phone list and map).
+            if (isRole(p.role)) next.roles[k] = { role: p.role, upTo: limit };
+            if (p.caption?.trim()) next.captions[k] = { text: p.caption.trim(), upTo: limit, lang };
+            else delete next.captions[k];
+            if (p.group?.trim()) next.groups[k] = { text: p.group.trim(), upTo: limit, lang };
+            else delete next.groups[k];
+          }
           for (const p of pairs) next.labels[ids.get(p.id)!] = { label: p.label.trim(), detail: p.detail?.trim() ?? "", upTo: limit, lang };
           // A "same as" that was not merged shows on the map as a suggestion with a merge button.
           for (const [a, b] of suggest) {

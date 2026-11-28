@@ -131,6 +131,11 @@ fn system_prompt(lang: &str) -> String {
         ("\"father – son\", \"husband – wife\", \"brothers\", \"master – servant\", \"close friends\"", "\"acquaintances\"")
     };
     let (narrator, kin) = if vi { ("\"Tôi (người kể)\"", "\"Bố tôi\"") } else { ("\"I (narrator)\"", "\"My father\"") };
+    let (caption, group) = if vi {
+        ("\"cha của Elizabeth\", \"luật sư của công ty\"", "\"gia đình Holmes\", \"ban giám đốc\", \"phe nổi dậy\"")
+    } else {
+        ("\"Elizabeth's father\", \"the company's lawyer\"", "\"the Holmes family\", \"the board\", \"the rebels\"")
+    };
     format!(
         "You help a reader keep track of the people in a book they are reading. The reader reads in \
 {language}: write every description, label and detail in {language} only, whatever language the passages, \
@@ -144,6 +149,12 @@ Also give `same_as`: the id (from ALL PEOPLE) of a different listed name that is
 empty string. Use it when the passages make it clear, for example the book's narrator (listed as {narrator}) \
 and the name others call the narrator by, or someone the narrator calls {kin} and that person's own name. \
 Never guess.
+Give `role`: how much they matter to the story so far: \"main\" (the story is about them), \"supporting\" \
+(they take part in it), \"minor\" (named in passing, only giving information) or \"not_a_character\" (not a \
+person in the story: a company, a product, a place, or the book's author or translator). \
+Give `caption`: who they are in at most six words, for a line under their name (for example {caption}), or an \
+empty string if the passages do not say. Give `group`: the family, organisation or side they belong to in the \
+story, in two to four words (for example {group}), the same words for everyone in it, or an empty string.
 
 For each pair, write `label`: their relationship in a few words, naming both sides when they differ, the first \
 person's side first (for example {examples}). If the passages do not make it clear, say only what they show \
@@ -196,8 +207,12 @@ fn schema() -> Value {
         "required": ["people", "pairs"],
         "properties": {
             "people": { "type": "array", "items": {
-                "type": "object", "additionalProperties": false, "required": ["id", "description", "same_as"],
-                "properties": { "id": { "type": "string" }, "description": { "type": "string" }, "same_as": { "type": "string" } }
+                "type": "object", "additionalProperties": false, "required": ["id", "description", "same_as", "role", "caption", "group"],
+                "properties": {
+                    "id": { "type": "string" }, "description": { "type": "string" }, "same_as": { "type": "string" },
+                    "role": { "type": "string", "enum": ["main", "supporting", "minor", "not_a_character"] },
+                    "caption": { "type": "string" }, "group": { "type": "string" }
+                }
             }},
             "pairs": { "type": "array", "items": {
                 "type": "object", "additionalProperties": false, "required": ["id", "label", "detail"],
@@ -207,9 +222,9 @@ fn schema() -> Value {
     })
 }
 
-/// Rough output size: a sentence or two per person and pair, plus thinking.
+/// Rough output size: a sentence or two, a role, a caption and a group per person, a label per pair, plus thinking.
 fn output_guess(job: &XrayJob) -> u64 {
-    300 + 90 * job.people.len() as u64 + 70 * job.pairs.len() as u64
+    300 + 120 * job.people.len() as u64 + 70 * job.pairs.len() as u64
 }
 
 #[derive(Serialize)]
@@ -296,7 +311,7 @@ pub struct AiResult {
     pub model: String,
 }
 
-/// Run the labelling. The result is `{people: [{id, description}], pairs: [{id, label, detail}]}`.
+/// Run the labelling. The result is `{people: [{id, description, same_as, role, caption, group}], pairs: [{id, label, detail}]}`.
 #[tauri::command]
 pub async fn xray_ai_run(provider: Provider, job: XrayJob) -> Result<AiResult, String> {
     let key = key_or_err(provider)?;
@@ -360,7 +375,7 @@ pub async fn xray_ai_run(provider: Provider, job: XrayJob) -> Result<AiResult, S
             // JSON mode wants the word "json" and an example of the shape.
             let system = format!(
                 "{system}\n\nReply with a json object shaped like: \
-{{\"people\": [{{\"id\": \"p1\", \"description\": \"...\", \"same_as\": \"\"}}], \"pairs\": [{{\"id\": \"r1\", \"label\": \"...\", \"detail\": \"...\"}}]}}"
+{{\"people\": [{{\"id\": \"p1\", \"description\": \"...\", \"same_as\": \"\", \"role\": \"supporting\", \"caption\": \"...\", \"group\": \"\"}}], \"pairs\": [{{\"id\": \"r1\", \"label\": \"...\", \"detail\": \"...\"}}]}}"
             );
             let mut last_err = String::new();
             // JSON mode can come back blank; try once more.
@@ -583,6 +598,12 @@ mod tests {
         assert!(vi.contains("in Vietnamese only") && vi.contains("vợ – chồng") && !vi.contains("father"));
         let en = system_prompt("en");
         assert!(en.contains("in English only") && en.contains("father – son") && !en.contains("vợ"));
+        // How much each person matters, a short caption and a group, for the phone map.
+        let people = &schema()["properties"]["people"]["items"];
+        for f in ["role", "caption", "group"] {
+            assert!(people["required"].as_array().unwrap().iter().any(|v| v == f), "{f} is required");
+        }
+        assert!(vi.contains("not_a_character") && vi.contains("cha của Elizabeth") && en.contains("Elizabeth's father"));
     }
 
     #[test]

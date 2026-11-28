@@ -42,6 +42,15 @@ const AI = {
     "Sam Kader": { text: "Giám đốc vận hành của Lumen, người góp vốn đầu tiên; quản lý nhân viên rất gắt.", upTo },
     "Ian Price": { text: "Nhà hoá học đầu tiên của Lumen, trầm lặng và cẩn thận.", upTo },
   },
+  captions: {
+    "Erin Cole": { text: "Nhà nghiên cứu ở Lumen", upTo },
+    "Hana Ito": { text: "Giáo sư hoá sinh ở Stanford", upTo },
+  },
+  groups: {
+    "Hana Ito": { text: "Đại học Stanford", upTo },
+    "Carl Ober": { text: "Đại học Stanford", upTo },
+  },
+  roles: { "Lumen": { role: "not_a_character", upTo } },
   labels: {
     [pairKey("Daniel Vance", "Mira Vance")]: { label: "cha – con gái", detail: "Daniel là cha của Mira.", upTo },
     [pairKey("Mira Vance", "Ruth Vance")]: { label: "con gái – mẹ", detail: "Ruth là mẹ của Mira.", upTo },
