@@ -18,7 +18,7 @@ import { castOrder, type CastGroup } from "./xrayCast";
 import { links, pairKey, upTo, type Entity, type Link } from "./xrayIndex";
 import { avatarColor, initialOf, mergeAsOne, type XrayState } from "./XRay";
 import { AiButton, EdgePanel, type AiProvider } from "./XRayGraph";
-import { Avatar, groupName, KIND_COLOR, roleLine, sideOf, useCastGroups } from "./XRayMobile";
+import { Avatar, groupName, KIND_COLOR, roleLine, sideOf, tint, useCastGroups } from "./XRayMobile";
 
 /** People shown per group before "+N" (unless the supporting cast is switched on). */
 const PER_FRAME = 4;
@@ -220,7 +220,7 @@ export function MobileRelationMap({
                     <button className="mx-row mx-row--rel" onClick={() => { setMoreSheet(false); push(o.key); }}>
                       <Avatar e={o} size={34} />
                       <span className="mx-row__main"><span className="mx-row__name">{o.name}</span></span>
-                      {s ? <span className="mx-rel" style={{ ["--k" as string]: KIND_COLOR[s.kind] }}>{s.text}</span> : <span className="mx-row__n">{t.xrTogether.replace("{0}", String(l.chunks.length))}</span>}
+                      {s ? <span className="mx-rel" style={tint(KIND_COLOR[s.kind])}>{s.text}</span> : <span className="mx-row__n">{t.xrTogether.replace("{0}", String(l.chunks.length))}</span>}
                     </button>
                   </li>
                 );
@@ -318,7 +318,7 @@ function Poster({
         {card(c0)}
         {centers[1] && (
           <>
-            <button className="xrm-between" onClick={() => onEdge(pairKey(c0.key, centers[1].key))} style={{ ["--k" as string]: KIND_COLOR[between?.kind ?? "none"] }}>
+            <button className="xrm-between" onClick={() => onEdge(pairKey(c0.key, centers[1].key))} style={{ ...tint(KIND_COLOR[between?.kind ?? "none"]) }}>
               {between?.text ?? t.xrTogether.replace("{0}", String(weight(c0.key, centers[1].key)))}
             </button>
             {card(centers[1])}
@@ -335,7 +335,7 @@ function Poster({
           const hidden = members.length - shown.length;
           const kind = groupKind(x, g, c0.key, centerKeys);
           return (
-            <section key={g.id} className="xrm-frame" style={{ ["--k" as string]: KIND_COLOR[kind ?? "none"] }}>
+            <section key={g.id} className="xrm-frame" style={{ ...tint(KIND_COLOR[kind ?? "none"]) }}>
               <i className="xrm-frame__dot" aria-hidden="true" />
               <header>
                 <button className="xrm-frame__name" onClick={() => onGroup(g.id)}>
@@ -472,7 +472,7 @@ function FocusView({
                 <button
                   key={`l${b.key}`}
                   className={`xrm-label${b.short ? " is-short" : ""}`}
-                  style={{ left: b.x, top: b.y, width: b.w, height: b.h, ["--k" as string]: KIND_COLOR[kindOfNode(b.key, of)] }}
+                  style={{ left: b.x, top: b.y, width: b.w, height: b.h, ...tint(KIND_COLOR[kindOfNode(b.key, of)]) }}
                   onClick={() => onEdge(pairKey(b.key, of))}
                   title={text}
                 >
@@ -491,7 +491,7 @@ function FocusView({
               );
             })}
             <button className="xrm-node xrm-node--center" style={{ left: L.center.x, top: L.center.y }} onClick={() => onOpenEntity(focus.key)} aria-label={t.mxOpenPage}>
-              <span className="xrm-node__glow" style={{ ["--c" as string]: avatarColor(focus.key) }}>
+              <span className="xrm-node__glow" style={tint(avatarColor(focus.key), "c")}>
                 <Avatar e={focus} size={L.center.r * 2} />
               </span>
             </button>

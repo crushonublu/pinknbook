@@ -25,6 +25,11 @@ export const KIND_COLOR: Record<RelKind, string> = {
   none: "#6b7280",
 };
 
+/** A colour and a see-through tint of it, as CSS variables (no color-mix: older WebViews drop it with var()). */
+export function tint(color: string, name = "k"): Record<string, string> {
+  return { [`--${name}`]: color, [`--${name}bg`]: `${color}29` };
+}
+
 /** The person the story turns around: the narrator, else the most important so far. */
 export function centerOf(x: XrayState): Entity | null {
   const order = castOrder(x.cast);
@@ -122,7 +127,7 @@ export function roleLine(lang: Lang, x: XrayState, e: Entity, center: Entity | n
 export function Avatar({ e, size = 40 }: { e: Entity; size?: number }) {
   if (e.type !== "person") {
     return (
-      <span className="mx-av mx-av--type" style={{ width: size, height: size, ["--c" as string]: TYPE_COLOR[e.type] }} aria-hidden="true">
+      <span className="mx-av mx-av--type" style={{ width: size, height: size, ...tint(TYPE_COLOR[e.type], "c") }} aria-hidden="true">
         <Icon name={TYPE_ICON[e.type]} size={Math.round(size * 0.45)} />
       </span>
     );
@@ -468,7 +473,7 @@ function MobileXRayDetail({ lang, x, view, e, onSelect, onFocus, onOpenGraph, fo
                           <span className="mx-row__name">{other.name}</span>
                         </span>
                         {s ? (
-                          <span className="mx-rel" style={{ ["--k" as string]: KIND_COLOR[s.kind] }}>
+                          <span className="mx-rel" style={tint(KIND_COLOR[s.kind])}>
                             {s.text}
                             {s.from === "ai" && <span className="xr__badge">{t.xrAiBadge}</span>}
                           </span>

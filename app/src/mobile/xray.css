@@ -59,7 +59,7 @@
 .is-android .mx-row__line { font-size: 12.5px; color: #9aa3b2; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .is-android .mx-row__n { flex: none; font-size: 12px; color: #9aa3b2; }
 .is-android .mx-av { flex: none; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; line-height: 1; }
-.is-android .mx-av--type { background: color-mix(in srgb, var(--c) 22%, #1e222b); color: var(--c); }
+.is-android .mx-av--type { background: #1e222b linear-gradient(var(--cbg), var(--cbg)); color: var(--c); }
 .is-android .mx-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .is-android .mx-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; max-width: 100%; padding: 0 14px 0 6px; border: 0; border-radius: 20px; background: #1f2430; color: #e7e9ee; font: inherit; font-size: 14px; }
 .is-android .mx-chip__av { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: #2a2f3a; color: #c3cad6; font-size: 12px; font-weight: 700; }
@@ -92,7 +92,7 @@
 .is-android .mx-sec { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .is-android .mx-about { margin: 0; font-size: 14.5px; line-height: 1.6; color: #e7e9ee; }
 .is-android .mx-about--quote { font-style: italic; color: #c9ced8; }
-.is-android .mx-rel { flex: none; max-width: 45%; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--k) 16%, transparent); color: var(--k); font-size: 12.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.is-android .mx-rel { flex: none; max-width: 45%; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--kbg); color: var(--k); font-size: 12.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
 /* The edit sheet (from the dots button), above the X-Ray sheet. */
 .is-android .mx-edit-layer { z-index: 30; }
@@ -139,7 +139,7 @@
 .is-android .xrm-center { flex: 1; max-width: 160px; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px; border: 0; border-radius: 20px; background: #171a21; color: #e7e9ee; font: inherit; text-align: center; }
 .is-android .xrm-center b { font-size: 15.5px; line-height: 1.25; overflow-wrap: anywhere; }
 .is-android .xrm-center small { font-size: 12px; color: #9aa3b2; line-height: 1.35; }
-.is-android .xrm-between { flex: none; max-width: 90px; padding: 4px 10px; border: 0; border-radius: 12px; background: color-mix(in srgb, var(--k) 16%, transparent); color: var(--k); font: inherit; font-size: 12.5px; line-height: 1.3; }
+.is-android .xrm-between { flex: none; max-width: 90px; padding: 4px 10px; border: 0; border-radius: 12px; background: var(--kbg); color: var(--k); font: inherit; font-size: 12.5px; line-height: 1.3; }
 .is-android .xrm-frames { position: relative; display: flex; flex-direction: column; gap: 14px; padding-left: 22px; }
 .is-android .xrm-frames::before { content: ""; position: absolute; left: 6px; top: -16px; bottom: 24px; width: 2px; border-radius: 1px; background: #2a2f3a; }
 .is-android .xrm-frame { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 18px; background: #171a21; box-shadow: inset 0 0 0 1px #232833; }
@@ -167,15 +167,15 @@
 .is-android .xrm-node > .mx-av { box-shadow: 0 0 0 3px #0f1115; }
 .is-android .xrm-node.is-outer > .mx-av { opacity: .85; }
 .is-android .xrm-node--center { z-index: 2; }
-.is-android .xrm-node__glow { display: block; border-radius: 50%; box-shadow: 0 0 0 6px color-mix(in srgb, var(--c) 30%, transparent); }
-.is-android .xrm-label { position: absolute; z-index: 1; box-sizing: border-box; padding: 0 10px; border: 0; border-radius: 11px; background: color-mix(in srgb, var(--k) 18%, #0f1115); color: color-mix(in srgb, var(--k) 70%, #fff); font: inherit; font-size: 12.5px; line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.is-android .xrm-node__glow { display: block; border-radius: 50%; box-shadow: 0 0 0 6px var(--cbg); }
+.is-android .xrm-label { position: absolute; z-index: 1; box-sizing: border-box; padding: 0 10px; border: 0; border-radius: 11px; background: #0f1115 linear-gradient(var(--kbg), var(--kbg)); color: var(--k); font: inherit; font-size: 12.5px; line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .is-android .xrm-ringmore { position: absolute; right: 12px; bottom: 8px; min-height: 36px; padding: 0 14px; border: 1px dashed #3a404d; border-radius: 18px; background: #0f1115; color: #c3cad6; font: inherit; font-size: 13px; }
 .is-android .xrm-alone { position: absolute; left: 0; right: 0; bottom: 24px; margin: 0; text-align: center; font-size: 13px; color: #9aa3b2; }
 .is-android .xrm-card { flex: none; margin: 0 12px calc(12px + var(--mobile-safe-bottom)); padding: 14px 16px; border-radius: 20px; background: #1b1f28; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); display: flex; flex-direction: column; gap: 10px; }
 .is-android .xrm-card__head { display: flex; align-items: center; gap: 12px; }
 .is-android .xrm-card__head > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .is-android .xrm-card h3 { margin: 0; font-size: 17px; font-weight: 700; }
-.is-android .xrm-card__head span { font-size: 13px; color: #9aa3b2; }
+.is-android .xrm-card__head > div > span { font-size: 13px; color: #9aa3b2; }
 .is-android .xrm-card p { margin: 0; font-size: 14px; line-height: 1.5; color: #c3cad6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .is-android .xrm-card__open { min-height: 46px; border: 0; border-radius: 23px; background: #2a2f3a; color: #e7e9ee; font: inherit; font-size: 15px; font-weight: 600; }
 

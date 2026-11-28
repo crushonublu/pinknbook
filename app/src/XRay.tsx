@@ -986,7 +986,7 @@ export function MentionList({
                 {p.before}
                 <mark>{p.name}</mark>
                 {p.after}
-                {p.cutEnd && "…"}
+                {p.cutEnd && !/[.!?…"”»)]$/.test(p.after) && "…"}
               </>
             )}
           </p>
