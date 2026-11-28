@@ -1,6 +1,6 @@
 import { MobilePicker } from "./mobile/MobilePicker";
 import { isAndroid } from "./platform";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { STR, type Lang } from "./i18n";
 import { Icon, type IconName } from "./icons";
@@ -16,8 +16,12 @@ import {
   links,
   mentionContexts,
   pairKey,
+  mentionPassage,
   rangeAt,
+  sectionText,
+  sentenceSpan,
   upTo,
+  type Passage,
   type Entity,
   type Link,
   type Mention,
@@ -213,6 +217,8 @@ export function useXray(view: any, asin: string, active: boolean, build: boolean
     descriptionOf,
     cast,
     castInfo,
+    /** The reader's place (the limit is this unless the whole book is shown). */
+    here: fraction,
     ready: !!index && progress == null,
   };
 }
@@ -343,17 +349,58 @@ export function mergeAsOne(x: XrayState, aKey: string, bKey: string, auto: boole
   return `${plan.from.name} → ${plan.to.name}`;
 }
 
-/** Go to a mention in the book. */
+/**
+ * Go to a mention in the book. Returns where it is (the name) and the
+ * sentence around it (for a brief highlight), or null when it cannot be reached.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function goToMention(view: any, m: Mention) {
+export async function goToMention(view: any, m: Mention): Promise<{ cfi: string; sentence: string } | null> {
   try {
     const doc = await view.book.sections[m[0]].createDocument();
     const r = rangeAt(doc, m[1], m[2]);
-    if (!r) return;
-    await view.goTo(view.getCFI(m[0], r));
+    if (!r) return null;
+    const cfi = view.getCFI(m[0], r);
+    const [s, e] = sentenceSpan(sectionText(doc).text, m[1], m[1] + m[2]);
+    const sr = rangeAt(doc, s, e - s);
+    await view.goTo(cfi);
+    return { cfi, sentence: sr ? view.getCFI(m[0], sr) : cfi };
   } catch {
-    /* unreachable place */
+    return null;
   }
+}
+
+/** How long the place jumped to stays highlighted. */
+export const FLASH_MS = 3000;
+
+/** The brief highlight on the place X-Ray jumped to: fades in, holds, fades out. */
+export function drawFlash(rects: DOMRectList | DOMRect[], opts: { dark: boolean }) {
+  const SVG = "http://www.w3.org/2000/svg";
+  const g = document.createElementNS(SVG, "g");
+  g.setAttribute("fill", opts.dark ? "#ff7aa0" : "#f06595");
+  g.style.mixBlendMode = opts.dark ? "screen" : "multiply";
+  for (const r of Array.from(rects)) {
+    const el = document.createElementNS(SVG, "rect");
+    el.setAttribute("x", String(r.left - 2));
+    el.setAttribute("y", String(r.top));
+    el.setAttribute("height", String(r.height));
+    el.setAttribute("width", String(r.width + 4));
+    el.setAttribute("rx", "3");
+    g.append(el);
+  }
+  const peak = opts.dark ? 0.42 : 0.38;
+  g.style.opacity = String(peak);
+  const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  try {
+    g.animate(
+      still
+        ? [{ opacity: peak }, { opacity: peak, offset: 0.9 }, { opacity: 0 }]
+        : [{ opacity: 0 }, { opacity: peak, offset: 0.1 }, { opacity: peak * 0.55, offset: 0.3 }, { opacity: peak, offset: 0.5 }, { opacity: peak, offset: 0.8 }, { opacity: 0 }],
+      { duration: FLASH_MS, fill: "forwards", easing: "ease-out" },
+    );
+  } catch {
+    /* no animation: stays until removed */
+  }
+  return g;
 }
 
 /** Where an entity appears in the part read so far (`span` of the book): a strip of 60 cells. */
@@ -382,6 +429,9 @@ export function XRayPanel({
   onOpenGraph,
   formatPos,
   onGo,
+  chapterOf,
+  openMention = null,
+  onOpenMention,
 }: {
   lang: Lang;
   x: XrayState;
@@ -392,6 +442,11 @@ export function XRayPanel({
   onOpenGraph: () => void;
   formatPos: (f: number) => string;
   onGo: (m: Mention) => void;
+  /** Section index → chapter title. */
+  chapterOf?: (section: number) => string;
+  /** The mention opened in place (Android), kept by the reader across a jump. */
+  openMention?: string | null;
+  onOpenMention?: (key: string | null) => void;
 }) {
   const t = STR[lang];
   const [type, setType] = useState<XrType | "all">(isAndroid ? "person" : "all");
@@ -400,7 +455,21 @@ export function XRayPanel({
   const entity = selected ? x.byKey.get(selected) ?? null : null;
 
   if (entity) {
-    return <XRayDetail lang={lang} x={x} view={view} e={entity} formatPos={formatPos} onBack={() => onSelect(null)} onSelect={onSelect} onGo={onGo} />;
+    return (
+      <XRayDetail
+        lang={lang}
+        x={x}
+        view={view}
+        e={entity}
+        formatPos={formatPos}
+        onBack={() => onSelect(null)}
+        onSelect={onSelect}
+        onGo={onGo}
+        chapterOf={chapterOf}
+        openMention={openMention}
+        onOpenMention={onOpenMention}
+      />
+    );
   }
 
   const q = filter.trim().toLowerCase();
@@ -507,6 +576,9 @@ export function XRayDetail({
   onBack,
   onSelect,
   onGo,
+  chapterOf,
+  openMention = null,
+  onOpenMention,
 }: {
   lang: Lang;
   x: XrayState;
@@ -517,6 +589,9 @@ export function XRayDetail({
   onBack: () => void;
   onSelect: (key: string) => void;
   onGo: (m: Mention) => void;
+  chapterOf?: (section: number) => string;
+  openMention?: string | null;
+  onOpenMention?: (key: string | null) => void;
 }) {
   const t = STR[lang];
   const ms = upTo(e, x.limit);
@@ -704,6 +779,20 @@ export function XRayDetail({
 
         {isAndroid && ms[0] && <button className="mx-jump" onClick={() => onGo(ms[0])}>{t.mxJump}</button>}
         <h4>{t.xrMentions}</h4>
+        {isAndroid ? (
+          <MentionList
+            key={e.key}
+            lang={lang}
+            view={view}
+            ms={x.wholeBook ? e.mentions : ms}
+            here={x.here}
+            formatPos={formatPos}
+            chapterOf={chapterOf}
+            open={openMention}
+            onOpen={(k) => onOpenMention?.(k)}
+            onGo={onGo}
+          />
+        ) : (<>
         <ul className="xr__mentions">
           {ms.slice(0, shown).map((m, i) => (
             <li key={i}>
@@ -719,8 +808,182 @@ export function XRayDetail({
             {t.xrMoreMentions} ({ms.length - shown})
           </button>
         )}
+        </>)}
       </div>
     </div>
+  );
+}
+
+/** A fixed colour per person (the same in every list and map), white text on it. */
+const AVATAR = ["#d6336a", "#3b5bdb", "#2f9e44", "#e8590c", "#7048e8", "#0c8599", "#a61e4d", "#5c940d"];
+export function avatarColor(key: string): string {
+  let h = 0;
+  for (const c of key) h = (h * 31 + (c.codePointAt(0) ?? 0)) >>> 0;
+  return AVATAR[h % AVATAR.length];
+}
+/** The letter on a person's avatar ("Tôi (người kể)" → "T"). */
+export function initialOf(name: string): string {
+  const w = name.replace(/\(.*?\)/g, " ").trim();
+  return (w[0] ?? "?").toLocaleUpperCase();
+}
+
+/** A mention's identity (section and offset), for the one opened in place. */
+export const mentionKey = (m: Mention) => `${m[0]}:${m[1]}`;
+
+/**
+ * The mentions of one entity on a phone, by chapter. Tapping one opens it in
+ * place (the sentences around it, the name marked) with "Go to this passage";
+ * it never jumps straight away. Mentions past the reader's place (`here`)
+ * are hidden until asked for, and then marked as possible spoilers.
+ */
+export function MentionList({
+  lang,
+  view,
+  ms,
+  here,
+  formatPos,
+  chapterOf,
+  open,
+  onOpen,
+  onGo,
+}: {
+  lang: Lang;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  view: any;
+  /** In book order. */
+  ms: Mention[];
+  here: number;
+  formatPos: (f: number) => string;
+  chapterOf?: (section: number) => string;
+  open: string | null;
+  onOpen: (key: string | null) => void;
+  onGo: (m: Mention) => void;
+}) {
+  const t = STR[lang];
+  const [shown, setShown] = useState(20);
+  const [later, setLater] = useState(false);
+  const [ctx, setCtx] = useState<Map<string, string>>(new Map());
+  const [passage, setPassage] = useState<{ key: string; p: Passage | null } | null>(null);
+  const read = ms.filter((m) => m[4] <= here + 1e-9);
+  const ahead = ms.length - read.length;
+  const list = (later ? ms : read).slice(0, shown);
+  const listKey = list.map(mentionKey).join(",");
+
+  useEffect(() => {
+    let off = false;
+    const need = list.filter((m) => !ctx.has(mentionKey(m)));
+    if (!need.length) return;
+    mentionContexts(view, need).then((c) => {
+      if (off) return;
+      setCtx((prev) => {
+        const next = new Map(prev);
+        need.forEach((m, i) => next.set(mentionKey(m), c[i]));
+        return next;
+      });
+    });
+    return () => {
+      off = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listKey, view]);
+
+  const openM = open ? ms.find((m) => mentionKey(m) === open) ?? null : null;
+  useEffect(() => {
+    if (!openM || passage?.key === open) return;
+    let off = false;
+    mentionPassage(view, openM, 2).then((p) => !off && setPassage({ key: open!, p }));
+    return () => {
+      off = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, view]);
+
+  // Keep the opened passage in view (it grows in place).
+  const openRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (passage?.key === open) openRef.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [passage, open]);
+
+  if (!ms.length) return null;
+  const rows: ReactNode[] = [];
+  let lastChap: string | null = null;
+  let markedHere = false;
+  for (const m of list) {
+    const k = mentionKey(m);
+    const after = m[4] > here + 1e-9;
+    if (after && !markedHere) {
+      markedHere = true;
+      rows.push(
+        <li key="here" className="xr-m__here" role="separator">
+          <span>{t.mxYouAreHere}</span>
+        </li>,
+      );
+      lastChap = null;
+    }
+    const chap = chapterOf?.(m[0]) || "";
+    if (chap && chap !== lastChap) rows.push(<li key={`c${k}`} className="xr-m__chap">{chap}</li>);
+    lastChap = chap;
+    if (k === open) {
+      const p = passage?.key === k ? passage.p : undefined;
+      rows.push(
+        <li key={k} ref={openRef} className={`xr-m is-open${after ? " is-later" : ""}`}>
+          <p className="xr-m__passage">
+            {p === undefined ? (
+              <span className="xr__muted">{ctx.get(k) ?? "…"}</span>
+            ) : p === null ? (
+              ctx.get(k) ?? "…"
+            ) : (
+              <>
+                {p.cutStart && "…"}
+                {p.before}
+                <mark>{p.name}</mark>
+                {p.after}
+                {p.cutEnd && "…"}
+              </>
+            )}
+          </p>
+          <div className="xr-m__meta">
+            {after && <span className="xr-m__spoil">{t.mxSpoilerWarn}</span>}
+            <span>{formatPos(m[4])}</span>
+          </div>
+          <div className="xr-m__actions">
+            <button className="xr-m__go" onClick={() => onGo(m)}>
+              {t.mxGoHere}
+            </button>
+            <button onClick={() => onOpen(null)}>{t.mxCollapse}</button>
+          </div>
+        </li>,
+      );
+      continue;
+    }
+    rows.push(
+      <li key={k} className={`xr-m${after ? " is-later" : ""}`}>
+        <button onClick={() => onOpen(k)} aria-expanded={false}>
+          <span className="xr-m__text">{ctx.get(k) ?? "…"}</span>
+          <span className="xr-m__meta">
+            {after && <span className="xr-m__spoil">{t.mxSpoilerWarn}</span>}
+            <span>{formatPos(m[4])}</span>
+          </span>
+        </button>
+      </li>,
+    );
+  }
+  const total = later ? ms.length : read.length;
+  return (
+    <>
+      <ul className="xr__mentions xr-ms">{rows}</ul>
+      {total > shown && (
+        <button className="xr__link" onClick={() => setShown((n) => n + 30)}>
+          {t.xrMoreMentions} ({total - shown})
+        </button>
+      )}
+      {ahead > 0 && !later && (shown >= read.length) && (
+        <button className="xr-m__reveal" onClick={() => setLater(true)}>
+          <span>{t.mxShowLater.replace("{0}", String(ahead))}</span>
+          <span className="xr-m__spoil">{t.mxSpoilerWarn}</span>
+        </button>
+      )}
+    </>
   );
 }
 

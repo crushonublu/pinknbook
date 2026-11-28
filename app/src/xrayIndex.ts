@@ -703,6 +703,59 @@ export async function chunkTexts(view: any, index: XrIndex, ids: number[]): Prom
   return out;
 }
 
+const STOP = /[.!?…\n]/;
+const CLOSERS = /[.!?…"”’»)\]]/;
+
+/**
+ * Where the sentence around `[start, end)` begins and ends in a section's
+ * text, with `around` more sentences on each side (each at most ~400 chars).
+ */
+export function sentenceSpan(text: string, start: number, end: number, around = 0): [number, number] {
+  let s = start;
+  for (let k = 0; k <= around && s > 0; k++) {
+    if (k > 0) while (s > 0 && (STOP.test(text[s - 1]) || /\s/.test(text[s - 1]))) s--;
+    const floor = s - 400;
+    while (s > 0 && !STOP.test(text[s - 1]) && s > floor) s--;
+  }
+  let e = end;
+  for (let k = 0; k <= around && e < text.length; k++) {
+    if (k > 0) while (e < text.length && (STOP.test(text[e]) || /\s/.test(text[e]))) e++;
+    const ceil = e + 400;
+    while (e < text.length && !STOP.test(text[e]) && e < ceil) e++;
+    while (e < text.length && CLOSERS.test(text[e])) e++;
+  }
+  while (s < start && /\s/.test(text[s])) s++;
+  return [s, Math.max(end, e)];
+}
+
+/** A mention with the sentences around it, the name apart (for the excerpt opened in place). */
+export interface Passage {
+  before: string;
+  name: string;
+  after: string;
+  /** More text before / after than shown. */
+  cutStart: boolean;
+  cutEnd: boolean;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function mentionPassage(view: any, m: Mention, around = 2): Promise<Passage | null> {
+  try {
+    const { text } = sectionText(await view.book.sections[m[0]].createDocument());
+    const [s, e] = sentenceSpan(text, m[1], m[1] + m[2], around);
+    const tidy = (x: string) => x.replace(/[ \t\r\f\v]+/g, " ").replace(/\s*\n\s*/g, "\n");
+    return {
+      before: tidy(text.slice(s, m[1])).replace(/^\s+/, ""),
+      name: text.slice(m[1], m[1] + m[2]),
+      after: tidy(text.slice(m[1] + m[2], e)).replace(/\s+$/, ""),
+      cutStart: s > 0,
+      cutEnd: e < text.length,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** The sentence around a mention (for lists and the first-mention description). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function mentionContexts(view: any, ms: Mention[]): Promise<string[]> {

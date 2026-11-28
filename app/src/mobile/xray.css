@@ -1,0 +1,37 @@
+/* Android X-Ray: excerpts opened in place, the jump back to the reader's place. */
+
+/* Mentions, by chapter. */
+.is-android .xr-ms { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
+.is-android .xr-ms > li.xr-m__chap { margin: 10px 2px 0; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #9aa3b2; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.is-android .xr-m > button { width: 100%; min-height: 56px; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 12px 14px; border: 0; border-radius: 14px; background: #1e222b; color: #e7e9ee; text-align: left; font: inherit; }
+.is-android .xr-m__text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 14.5px; line-height: 1.55; }
+.is-android .xr-m__meta { display: flex; gap: 8px; align-items: center; justify-content: flex-end; font-size: 12px; color: #9aa3b2; }
+.is-android .xr-m.is-later > button { background: #1a1d24; }
+.is-android .xr-m.is-later .xr-m__text { color: #c9ced8; }
+.is-android .xr-m__spoil { margin-right: auto; padding: 1px 8px; border-radius: 999px; background: #3a2a1a; color: #ffc078; font-size: 11.5px; }
+.is-android .xr-m.is-open { padding: 14px; border-radius: 16px; background: #232833; box-shadow: inset 0 0 0 1px #3a404d; display: flex; flex-direction: column; gap: 10px; }
+.is-android .xr-m__passage { margin: 0; font-size: 15.5px; line-height: 1.7; color: #e7e9ee; white-space: pre-line; overflow-wrap: anywhere; }
+.is-android .xr-m__passage mark { background: rgba(255, 122, 160, .28); color: #fff; border-radius: 3px; padding: 0 2px; font-weight: 600; }
+.is-android .xr-m__actions { display: flex; gap: 8px; }
+.is-android .xr-m__actions button { min-height: 44px; padding: 0 16px; border: 1px solid #3a404d; border-radius: 12px; background: transparent; color: #e7e9ee; font: inherit; font-size: 14px; }
+.is-android .xr-m__actions .xr-m__go { flex: 1; border: 0; background: #d6336a; color: #fff; font-weight: 600; }
+.is-android .xr-ms > li.xr-m__here { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; color: #ff8fb0; font-size: 12px; font-weight: 600; }
+.is-android .xr-ms > li.xr-m__here::before, .is-android .xr-ms > li.xr-m__here::after { content: ""; flex: 1; height: 1px; background: #ff8fb055; }
+.is-android .xr-m__reveal { width: 100%; min-height: 48px; margin-top: 8px; display: flex; align-items: center; gap: 10px; padding: 8px 14px; border: 1px dashed #3a404d; border-radius: 14px; background: transparent; color: #e7e9ee; font: inherit; font-size: 14px; text-align: left; }
+.is-android .xr-m__reveal .xr-m__spoil { margin: 0 0 0 auto; }
+
+/* The chip that takes the reader back after a jump (above the page, no controls needed). */
+.is-android .mr-jumpback { position: absolute; z-index: 9; left: 12px; right: 12px; bottom: calc(var(--mobile-safe-bottom) + 38px); display: flex; gap: 10px; align-items: stretch; pointer-events: none; animation: mr-jumpback-in .2s ease-out; }
+.is-android .mr-jumpback button { pointer-events: auto; min-height: 52px; display: flex; align-items: center; gap: 10px; border: 0; border-radius: 26px; background: #171a21; color: #fff; font: inherit; box-shadow: 0 8px 24px rgba(0, 0, 0, .32); }
+.is-android .mr-jumpback__back { flex: 1; min-width: 0; padding: 0 16px; text-align: left; }
+.is-android .mr-jumpback__back > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.is-android .mr-jumpback__back b { font-size: 15px; font-weight: 600; }
+.is-android .mr-jumpback__back small { font-size: 12px; color: #b8bfcc; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.is-android .mr-jumpback__xr { flex: none; padding: 0 16px 0 9px; font-size: 14px; }
+.is-android .mr-jumpback__xr > span { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 700; }
+@keyframes mr-jumpback-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .is-android .mr-jumpback { animation: none; } }
+
+/* Where the reader was, on the progress bar. */
+.is-android .rscrub__tick--here { top: -9px; height: 18px; width: 3px; border-radius: 2px; transform: translateX(-1.5px); opacity: 1; }
+.is-android .rscrub__tick--here::after { content: attr(data-label); position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 11px; color: var(--r-muted, #9aa3b2); }

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
-/** A tick on the bar: a bookmark or a highlight. */
+/** A tick on the bar: a bookmark, a highlight, a result, or where the reader was before a jump. */
 export interface ScrubMark {
   key: string;
   fraction: number;
   color: string;
-  kind: "bookmark" | "highlight" | "search";
+  kind: "bookmark" | "highlight" | "search" | "here";
+  /** Written above the tick ("here" only). */
+  label?: string;
 }
 
 /**
@@ -166,6 +168,7 @@ export function ScrubBar({
               left: `calc(${THUMB_HALF}px + ${m.fraction} * (100% - ${THUMB_HALF * 2}px))`,
               background: m.color,
             }}
+            data-label={m.label}
           />
         ))}
       </div>

@@ -15,7 +15,8 @@ import { drawSearchHit, searchBook, type SearchHit } from "./bookSearch";
 import { EMPTY_SEARCH, SearchPanel, type SearchState } from "./SearchPanel";
 import { DictPopup, type DictRequest } from "./DictPopup";
 import { WordsPanel, type VocabItem } from "./Vocab";
-import { entityAtPoint, formMap, goToMention, useXray, xrayCardContent, XRayPanel } from "./XRay";
+import { avatarColor, drawFlash, entityAtPoint, FLASH_MS, formMap, goToMention, initialOf, useXray, xrayCardContent, XRayPanel } from "./XRay";
+import type { Mention } from "./xrayIndex";
 import { XRayGraph } from "./XRayGraph";
 import { isLookupSize, lookupCandidates, selectionContext, sentenceAround } from "./dictionary";
 import { FootnotePopup, isNoteRef, loadFootnote, noteContent, type FootnotePeek } from "./Footnote";
@@ -25,6 +26,7 @@ import { MobileReaderSheet } from "./mobile/MobileReaderSheet";
 import { MobileReaderThemes } from "./mobile/MobileReaderThemes";
 import { acceptReaderSurfaceEvent, watchReaderGestures } from "./mobile/readerGestures";
 import "./mobile/reader.css";
+import "./mobile/xray.css";
 import { watchTouchSelection } from "./mobile/selection";
 import { useMobileDismiss } from "./mobile/back";
 import { mobileAnnotationStyle, saveMobileAnnotationStyle, mobileBaseColor, type MobileHighlightStyle } from "./mobile/annotationStyle";
@@ -269,6 +271,18 @@ export default function Reader({
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocHref, setTocHref] = useState<string | null>(null);
   const [xrSel, setXrSel] = useState<string | null>(null);
+  /** X-Ray's excerpt opened in place (kept across a jump, so reopening X-Ray shows it). */
+  const [xrOpen, setXrOpen] = useState<string | null>(null);
+  /**
+   * Where the reader was before X-Ray took them to a passage: kept until they
+   * go back, or read on from the new place (then they chose to stay).
+   */
+  const [jumpFrom, setJumpFrom] = useState<{ cfi: string; fraction: number; chapter: string | null } | null>(null);
+  const jumpFromRef = useRef(jumpFrom);
+  jumpFromRef.current = jumpFrom;
+  /** Pages turned forward since the last X-Ray jump. */
+  const jumpPages = useRef(0);
+  const flashRef = useRef<{ value: string; xrayFlash: true } | null>(null);
   const [sidebar, setSidebar] = useState<SidebarTab | null>(null);
   const sidebarRef = useRef(sidebar);
   sidebarRef.current = sidebar;
@@ -284,6 +298,7 @@ export default function Reader({
       else if (sidebar === "xray" && xrSel) setXrSel(null);
       else if (sidebar) setSidebar(null);
       else if (mobileMenu) setMobileMenu(false);
+      else if (jumpFrom) goBackFromJump();
       else if (controls) setControls(false);
       else return false;
       return true;
@@ -298,7 +313,8 @@ export default function Reader({
     window.addEventListener("mobile-dismiss", back);
     window.addEventListener("keydown", key, true);
     return () => { window.removeEventListener("mobile-dismiss", back); window.removeEventListener("keydown", key, true); };
-  }, [controls, mobileMenu, appearance, showSettings, sidebar, xrSel]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controls, mobileMenu, appearance, showSettings, sidebar, xrSel, jumpFrom]);
 
   useEffect(() => {
     if (!isAndroid) return;
@@ -384,6 +400,54 @@ export default function Reader({
     });
   }
   const paintedRef = useRef<SearchState | null>(null);
+
+  /** Light up the passage X-Ray went to for a moment (never saved). */
+  function flashAt(cfi: string) {
+    const view = viewRef.current;
+    if (!view) return;
+    const old = flashRef.current;
+    if (old) view.deleteAnnotation(old)?.catch?.(() => undefined);
+    const a = { value: cfi, xrayFlash: true as const };
+    flashRef.current = a;
+    view.addAnnotation(a)?.catch?.(() => undefined);
+    window.setTimeout(() => {
+      if (flashRef.current !== a) return;
+      flashRef.current = null;
+      viewRef.current?.deleteAnnotation(a)?.catch?.(() => undefined);
+    }, FLASH_MS + 100);
+  }
+
+  /** What the jump-back chip's X-Ray button reopens. */
+  const jumpVia = useRef<"panel" | "graph">("panel");
+
+  /**
+   * Go to a passage X-Ray shows and light it up. On a phone the reader's
+   * place is kept (the first one, over several jumps) until they come back.
+   */
+  async function xrayGo(m: Mention, via: "panel" | "graph") {
+    const view = viewRef.current;
+    if (!view) return;
+    const fresh = !jumpFromRef.current;
+    if (isAndroid) {
+      const here = locRef.current;
+      if (here && fresh) setJumpFrom({ cfi: here.cfi, fraction: here.fraction, chapter: here.chapter });
+      jumpPages.current = 0;
+      jumpVia.current = via;
+      setSidebar(null);
+      setControls(false);
+      setMobileMenu(false);
+    }
+    const hit = await goToMention(view, m);
+    if (hit) flashAt(hit.sentence);
+    else if (isAndroid && fresh) setJumpFrom(null);
+  }
+
+  /** Back to where the reader was before X-Ray's jump. */
+  function goBackFromJump() {
+    const j = jumpFromRef.current;
+    setJumpFrom(null);
+    if (j) void viewRef.current?.goTo(j.cfi);
+  }
   useEffect(() => {
     const prev = paintedRef.current;
     const show = sidebar === "search" && search.hits.length > 0;
@@ -642,6 +706,10 @@ export default function Reader({
         view.addEventListener("load", (e: CustomEvent) => watchSelection(e.detail.doc, e.detail.index));
         view.addEventListener("draw-annotation", (e: CustomEvent) => {
           const { draw, annotation } = e.detail;
+          if (annotation.xrayFlash) {
+            draw(drawFlash, { dark: THEMES[resolveTheme(prefsRef.current, theme)].dark });
+            return;
+          }
           if (annotation.search) {
             draw(drawSearchHit, {
               current: !!annotation.current,
@@ -698,6 +766,8 @@ export default function Reader({
             const step = prevFrac.current == null ? 0 : d.fraction - prevFrac.current;
             if (step > 0 && step < 0.01) progressAcc.current += step;
             prevFrac.current = d.fraction;
+            // Reading on from where X-Ray went: the reader stays there.
+            if (jumpFromRef.current && step > 0 && step < 0.01 && ++jumpPages.current > 3) setJumpFrom(null);
           }
           noteInputRef.current();
           const label = d.tocItem?.label;
@@ -1374,6 +1444,7 @@ export default function Reader({
         .map((m, i) => ({ key: `x${i}`, fraction: m[4], color: "var(--accent)", kind: "search" as const }))
     : [];
   const scrubMarks: ScrubMark[] = [
+    ...(jumpFrom ? [{ key: "here", fraction: jumpFrom.fraction, color: "var(--r-fg, currentColor)", kind: "here" as const, label: t.mxReadingMark }] : []),
     ...scrubMarksXray,
     ...bookmarks.map((b) => ({ key: `b${b.id}`, fraction: b.fraction, color: "var(--accent)", kind: "bookmark" as const })),
     ...annotations.map((a) => ({ key: `a${a.id}`, fraction: a.fraction, color: COLOR_HEX[a.color], kind: "highlight" as const })),
@@ -1423,6 +1494,30 @@ export default function Reader({
       {isAndroid && <>
         <div ref={tapAreaRef} className="mr-tap-area" aria-hidden="true" />
         <div className="mr-running-title">{row.title || row.asin}</div>
+        {jumpFrom && !controls && !sidebar && !xrGraph && status === "ready" && (
+          <div className="mr-jumpback">
+            <button className="mr-jumpback__back" onClick={goBackFromJump}>
+              <Icon name="arrowL" size={18} />
+              <span>
+                <b>{t.mxJumpBack}</b>
+                <small>{[jumpFrom.chapter, `${Math.round(jumpFrom.fraction * 100)}%`].filter(Boolean).join(" · ")}</small>
+              </span>
+            </button>
+            {prefs.xray && (() => {
+              const who = xrSel ? xr.byKey.get(xrSel) : undefined;
+              return (
+                <button
+                  className="mr-jumpback__xr"
+                  aria-label={t.mxJumpBackX}
+                  onClick={() => (jumpVia.current === "graph" || !who ? setXrGraph(true) : setSidebar("xray"))}
+                >
+                  {who ? <span style={{ background: avatarColor(who.key) }}>{initialOf(who.name)}</span> : <Icon name="xray" size={18} />}
+                  X-Ray
+                </button>
+              );
+            })()}
+          </div>
+        )}
         <div className="mr-running-foot"><span>{chapter ?? t.mrChapter}{(chapterLeft ?? mobileChapterMinutes) != null ? ` · ${t.mrMinutes.replace("{0}", String(chapterLeft ?? mobileChapterMinutes))}` : ""}</span><span>{pct}%</span></div>
         {(controls || status === "error") && <>
           <header className="mr-top">
@@ -1442,7 +1537,7 @@ export default function Reader({
                 }} />
               <button className="mr-menu-toggle" aria-label={t.mrMenu} aria-expanded={mobileMenu} onClick={() => setMobileMenu((v) => !v)}><Icon name="hamburger" size={16} /></button>
             </div>
-            <div className="mr-bottom__position"><span>{pct}%</span>{undoJump && <button onClick={() => {
+            <div className="mr-bottom__position"><span>{pct}%</span>{jumpFrom ? <button onClick={goBackFromJump}>{t.mrBackTo.replace("{0}", `${Math.round(jumpFrom.fraction * 100)}%`)}</button> : undoJump && <button onClick={() => {
               void viewRef.current?.goTo(undoJump.cfi);
               setUndoJump(null);
             }}>{t.mrBackTo.replace("{0}", `${Math.round(undoJump.fraction * 100)}%`)}</button>}</div>
@@ -1587,10 +1682,13 @@ export default function Reader({
                   x={xr}
                   view={viewRef.current}
                   selected={xrSel}
-                  onSelect={setXrSel}
+                  onSelect={(k) => { setXrSel(k); setXrOpen(null); }}
                   onOpenGraph={() => setXrGraph(true)}
                   formatPos={fmtPos}
-                  onGo={(m) => { if (isAndroid) { setSidebar(null); setControls(false); } goToMention(viewRef.current, m); }}
+                  onGo={(m) => void xrayGo(m, "panel")}
+                  chapterOf={chapterOf}
+                  openMention={xrOpen}
+                  onOpenMention={setXrOpen}
                 />
               ) : undefined
             }
@@ -1677,7 +1775,7 @@ export default function Reader({
           title={row.title || row.asin}
           provider={prefs.aiProvider}
           formatPos={fmtPos}
-          onGo={(m) => { setXrGraph(false); setSidebar(null); void goToMention(viewRef.current, m); }}
+          onGo={(m) => { setXrGraph(false); setSidebar(null); void xrayGo(m, "graph"); }}
           onClose={() => setXrGraph(false)}
           onOpenEntity={(k) => {
             setXrGraph(false);
