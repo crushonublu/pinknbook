@@ -901,7 +901,8 @@ export default function Reader({
     });
   }
 
-  const xr = useXray(viewRef.current, row.asin, prefs.xray && status === "ready", sidebar === "xray" || xrGraph, fraction);
+  const xrCredits = useMemo(() => (row.author ? [row.author] : []), [row.author]);
+  const xr = useXray(viewRef.current, row.asin, prefs.xray && status === "ready", sidebar === "xray" || xrGraph, fraction, xrCredits);
   const xrRef = useRef(xr);
   xrRef.current = xr;
   const xrForms = useMemo(() => formMap(xr.ents), [xr.ents]);

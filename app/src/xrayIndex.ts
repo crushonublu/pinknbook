@@ -60,6 +60,8 @@ export interface XrEdits {
   firstPerson?: boolean;
   /** Pairs already merged because the AI said they are one person (never redone after a split). */
   autoMerged?: string[];
+  /** Entity key → how much the reader says the person matters (over the AI and the rules; see xrayCast.ts). */
+  tiers?: Record<string, "main" | "minor" | "passing">;
 }
 
 export interface XrAi {
@@ -69,6 +71,8 @@ export interface XrAi {
   /** `lang`: the language it was written in (redone when the reader's language differs). */
   descriptions: Record<string, { text: string; upTo: number; lang?: string }>;
   labels: Record<string, { label: string; detail: string; upTo: number; lang?: string }>;
+  /** Name → how much the person matters, as the AI judged up to `upTo` (see xrayCast.ts `AiRole`). */
+  roles?: Record<string, { role: "main" | "supporting" | "minor" | "not_a_character"; upTo: number }>;
 }
 
 export const EMPTY_EDITS: XrEdits = { merges: {}, hidden: [], names: {}, types: {}, terms: [], labels: {} };

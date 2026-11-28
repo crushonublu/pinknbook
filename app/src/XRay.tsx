@@ -26,6 +26,7 @@ import {
   type XrIndex,
   type XrType,
 } from "./xrayIndex";
+import { castOf, type AiRole, type CastInfo } from "./xrayCast";
 
 export const TYPE_ICON: Record<XrType, IconName> = { person: "person", place: "place", org: "org", term: "term" };
 export const TYPE_COLOR: Record<XrType, string> = { person: "#e5679a", place: "#4f8de2", org: "#d99a2b", term: "#3fb26b" };
@@ -33,10 +34,11 @@ export const TYPE_COLOR: Record<XrType, string> = { person: "#e5679a", place: "#
 /**
  * A book's X-Ray: the stored index (built on first use), the reader's edits
  * and the AI's labels, cut at `limit` (the reading fraction) unless the
- * whole book is asked for.
+ * whole book is asked for. `credits` (author, translator) are the book's
+ * makers: a name that is one of them is left out of the people.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useXray(view: any, asin: string, active: boolean, build: boolean, fraction: number) {
+export function useXray(view: any, asin: string, active: boolean, build: boolean, fraction: number, credits: string[] = []) {
   const [index, setIndex] = useState<XrIndex | null>(null);
   const [edits, setEditsState] = useState<XrEdits>(EMPTY_EDITS);
   const [ai, setAiState] = useState<XrAi>(EMPTY_AI);
@@ -120,8 +122,8 @@ export function useXray(view: any, asin: string, active: boolean, build: boolean
 
   const limit = wholeBook ? 1 : fraction;
   const all = useMemo(() => (index ? entities(index, edits) : []), [index, edits]);
-  /** Entities seen up to the limit, by how often. */
-  const ents = useMemo(
+  /** Entities seen up to the limit, by how often (the book's makers included). */
+  const seen = useMemo(
     () =>
       all
         .map((e) => ({ e, n: upTo(e, limit).length }))
@@ -177,6 +179,24 @@ export function useXray(view: any, asin: string, active: boolean, build: boolean
     [aiDescriptions, limit],
   );
 
+  // How much each person matters so far (main / minor / passing), and who is the author.
+  const roles = useMemo(() => {
+    const m = new Map<string, AiRole>();
+    for (const [name, r] of Object.entries(ai.roles ?? {})) {
+      const o = owner.get(name);
+      if (o && r.upTo <= limit + 1e-6 && (o === name || !m.has(o))) m.set(o, r.role);
+    }
+    return m;
+  }, [ai.roles, owner, limit]);
+  const creditKey = credits.join("\u0001");
+  const cast = useMemo(
+    () => castOf(seen, links(seen, limit), limit, { credits: creditKey ? creditKey.split("\u0001") : [], overrides: edits.tiers, roles }),
+    [seen, limit, creditKey, edits.tiers, roles],
+  );
+  /** What X-Ray shows: everything seen so far but the book's makers. */
+  const ents = useMemo(() => seen.filter((e) => !cast.get(e.key)?.author), [seen, cast]);
+  const castInfo = useCallback((key: string): CastInfo | undefined => cast.get(key), [cast]);
+
   return {
     index,
     edits,
@@ -191,6 +211,8 @@ export function useXray(view: any, asin: string, active: boolean, build: boolean
     setWholeBook,
     labelOf,
     descriptionOf,
+    cast,
+    castInfo,
     ready: !!index && progress == null,
   };
 }
