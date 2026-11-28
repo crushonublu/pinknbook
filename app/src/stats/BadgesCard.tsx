@@ -1,4 +1,6 @@
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { STR, type Lang } from "../i18n";
+import { useMobileDismiss } from "../mobile/back";
 import { Icon } from "../icons";
 import { fmt } from "./format";
 import type { BadgeId, StatsSummary } from "./types";
@@ -22,9 +24,94 @@ const tierProgress = (b: Badge) => {
   return next == null ? 1 : Math.min(1, (b.value - prev) / Math.max(1, next - prev));
 };
 
-/** Every badge in group order, as equal tiles with their progress. */
+/** Where the tapped badge's bubble goes inside the grid. */
+interface Tip {
+  id: BadgeId;
+  group: (typeof GROUPS)[number]["key"];
+  /** Top of the bubble and the tile's centre, in the grid's box. */
+  top: number;
+  center: number;
+}
+const TIP_W = 300;
+
+/**
+ * What a badge asks for, under its tile: its tier and group, what the next
+ * tier needs and how far along it is, and every tier with its mark.
+ */
+function BadgeTip({ lang, b, tip, gridW, onClose }: { lang: Lang; b: Badge; tip: Tip; gridW: number; onClose: () => void }) {
+  const t = STR[lang];
+  const ref = useRef<HTMLDivElement>(null);
+  const w = Math.min(TIP_W, gridW);
+  const left = Math.max(0, Math.min(gridW - w, tip.center - w / 2));
+  const next = b.thresholds[b.tier] ?? null;
+  const desc = (n: number) => t[`bdd_${b.id}` as const].replace("{0}", String(n));
+  useLayoutEffect(() => {
+    ref.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [tip.id]);
+  // A tap anywhere else closes it (the tiles toggle it themselves).
+  useEffect(() => {
+    const away = (e: PointerEvent) => {
+      const el = e.target as Element | null;
+      if (ref.current?.contains(el) || el?.closest?.(".bcard")) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", away, true);
+    return () => document.removeEventListener("pointerdown", away, true);
+  }, [onClose]);
+  return (
+    <div ref={ref} className="btip" role="dialog" aria-label={t[`bd_${b.id}` as const]} style={{ top: tip.top, left, width: w }}>
+      <i className="btip__arrow" style={{ left: tip.center - left }} aria-hidden="true" />
+      <div className="btip__head">
+        <b>{t[`bd_${b.id}` as const]}</b>
+        <span className={`btip__tier btip__tier--t${b.tier}`}>{t[TIER_KEYS[b.tier]]}</span>
+      </div>
+      <span className="btip__group">{t[tip.group]}</span>
+      {next != null ? (
+        <>
+          <p className="btip__next">
+            {b.tier === 0 ? t.bdToUnlock : t.bdToNext.replace("{0}", t[TIER_KEYS[b.tier + 1]])} {desc(next)}
+          </p>
+          <div className="btip__prog">
+            <span aria-hidden="true">
+              <i style={{ width: `${Math.min(1, b.value / Math.max(1, next)) * 100}%` }} />
+            </span>
+            <small>
+              {b.value}/{next}
+            </small>
+          </div>
+        </>
+      ) : (
+        <p className="btip__next">
+          {t.maxTier}: {desc(b.thresholds[b.thresholds.length - 1])}
+        </p>
+      )}
+      <ol className="btip__ladder">
+        {b.thresholds.map((n, i) => (
+          <li key={i} className={b.tier > i ? "is-done" : undefined}>
+            <span className={`btip__dot bcard--t${i + 1}`} aria-hidden="true" />
+            <span>{t[TIER_KEYS[i + 1]]}</span>
+            <b>{n}</b>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** Every badge in group order, as equal tiles with their progress; tap one to see what it asks for. */
 export function BadgeGrid({ lang, s }: { lang: Lang; s: StatsSummary }) {
   const t = STR[lang];
+  const grid = useRef<HTMLDivElement>(null);
+  const [tip, setTip] = useState<Tip | null>(null);
+  useMobileDismiss(!!tip, () => setTip(null), true);
+  const open = (id: BadgeId, group: Tip["group"], el: HTMLElement) => {
+    if (tip?.id === id) {
+      setTip(null);
+      return;
+    }
+    setTip({ id, group, top: el.offsetTop + el.offsetHeight + 10, center: el.offsetLeft + el.offsetWidth / 2 });
+  };
+  const tipBadge = tip ? s.badges.find((x) => x.id === tip.id) : undefined;
   return (
     <section className="stats__panel">
       <div className="stats__panelhead">
@@ -33,17 +120,20 @@ export function BadgeGrid({ lang, s }: { lang: Lang; s: StatsSummary }) {
       </div>
       {/* One block of equal tiles in group order (the group is in the
           tooltip), centred so a short last row stays balanced. */}
-      <div className="bgrid">
+      <div className="bgrid" ref={grid}>
         {GROUPS.flatMap((g) =>
           g.ids.map((id) => {
             const b = s.badges.find((x) => x.id === id);
             if (!b) return null;
             const next = b.thresholds[b.tier] ?? null;
             return (
-              <div
+              <button
                 key={id}
-                className={`bcard bcard--t${b.tier}`}
+                type="button"
+                className={`bcard bcard--t${b.tier}${tip?.id === id ? " is-open" : ""}`}
+                aria-expanded={tip?.id === id}
                 title={`${t[`bd_${id}` as const]} · ${t[TIER_KEYS[b.tier]]} (${t[g.key]})\n${t[`bdd_${id}` as const].replace("{0}", String(next ?? b.thresholds[3]))}`}
+                onClick={(e) => open(id, g.key, e.currentTarget)}
               >
                 <div className="bcard__img">
                   <img src={badgeImg(id)} alt="" draggable={false} />
@@ -62,10 +152,11 @@ export function BadgeGrid({ lang, s }: { lang: Lang; s: StatsSummary }) {
                     </div>
                   </>
                 )}
-              </div>
+              </button>
             );
           }),
         )}
+        {tip && tipBadge && <BadgeTip lang={lang} b={tipBadge} tip={tip} gridW={grid.current?.clientWidth ?? TIP_W} onClose={() => setTip(null)} />}
       </div>
     </section>
   );
