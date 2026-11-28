@@ -98,6 +98,9 @@ function Preview() {
             {log.length ? `→ ${log[0]}` : "…"}
           </p>
           <MobileReaderSheet title="X-Ray" closeLabel="Đóng" onClose={() => undefined}>
+            {/* The same boxes ReaderSidebar puts X-Ray in on Android. */}
+            <aside className="rside">
+            <div className="rside__body rside__body--search">
             <XRayPanel
               lang={lang}
               x={x}
@@ -122,6 +125,8 @@ function Preview() {
               openMention={open}
               onOpenMention={setOpen}
             />
+            </div>
+            </aside>
           </MobileReaderSheet>
           {graph && x.ready && (
             <MobileRelationMap

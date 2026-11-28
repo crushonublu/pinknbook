@@ -41,7 +41,10 @@
 .is-android .mx-scope { margin: 0; font-size: 12.5px; color: #9aa3b2; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .is-android .mx .xr__types button > span { display: inline; margin-left: 6px; font-size: 11.5px; color: #9aa3b2; }
 .is-android .mx-search { min-height: 44px; border-radius: 12px; }
-.is-android .mx-scroll { display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px; }
+/* In the reader's sheet the body does not scroll (.rside__body--search): the list under the tabs does. */
+.is-android .mx > :not(.mx-scroll) { flex: none; }
+.is-android .mx-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; padding-bottom: 20px; }
+.is-android .mx-scroll > * { flex: none; }
 .is-android .mx-h { margin: 8px 4px 0; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #9aa3b2; }
 .is-android .mx-mapcard { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 14px; border: 0; border-radius: 16px; background: #1f2430; color: #e7e9ee; font: inherit; text-align: left; }
 .is-android .mx-mapcard__icon { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(255, 92, 138, .16); color: #ff7aa0; }
